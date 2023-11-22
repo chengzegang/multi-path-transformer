@@ -13,10 +13,10 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import datapipes as dp
 from torch import Tensor
 from laion5b import Laion5B
+import warnings
+warnings.filterwarnings("ignore")
 
-
-def load_image(path: str, size: int = 256) -> Tensor:
-    img = Image.open(path).convert("RGB")
+def load_image(img: Image.Image, size: int = 256) -> Tensor:
     img = TF.resize(img, size, antialias=True)
     img = TF.center_crop(img, size)
     img = TF.pil_to_tensor(img)
@@ -45,11 +45,7 @@ def train(
         id="vision-encoder",
     )
     dataset = (
-        dp.iter.FileLister(root, recursive=True)
-        .filter(lambda x: x.lower().endswith(".jpeg"))
-        .shuffle()
-        .sharding_filter()
-        .map(lambda x: load_image(x, 256))
+        dp.iter.IterableWrapper(Laion5B(root)).sharding_filter().map(lambda x: load_image(x, 256))
     )
     dl = DataLoader(dataset, batch_size=batch_size, drop_last=False, num_workers=16)
     model = Autoencoder2d(**model_config)
@@ -62,13 +58,14 @@ def train(
         print("Starting from scratch")
     model = model.to("cuda").to(torch.bfloat16).to(memory_format=torch.channels_last)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, fused=True, weight_decay=0)
-    sched = LambdaLR(opt, lr_lambda=lambda x: exponential_decay(0.99996, 0.01, x))
+    sched = LambdaLR(opt, lr_lambda=lambda x: exponential_decay(0.9996, 0.01, x))
     idx = 0
     grad_accum = 1
-    proxy_model = torch.compile(
-        model, fullgraph=True, dynamic=False, mode="max-autotune"
-    )
+    #proxy_model = torch.compile(
+    #    model, fullgraph=True, dynamic=False, mode="max-autotune"
+    #)
     for i, (inputs, targets) in enumerate(pbar := tqdm(dl)):
+        grad_accum = max(64, i // 1000 + 1)
         targets = (
             targets.to("cuda")
             .to(torch.bfloat16)
@@ -79,7 +76,7 @@ def train(
             .to(torch.bfloat16)
             .contiguous(memory_format=torch.channels_last)
         )
-        outputs = proxy_model(inputs)
+        outputs = model(inputs)
         loss = F.l1_loss(outputs, targets)
         pbar.set_description(f"{idx} loss {loss:.4f} lr {sched.get_last_lr()[0]:.4e}")
         loss.backward()
@@ -110,4 +107,4 @@ if __name__ == "__main__":
         "num_layers": 4,
         "latent_size": 8,
     }
-    train("/mnt/f/datasets/imagenet/", model_config=model_config)
+    train('/scratch/work/public/ml-datasets/laion2B-en-data/', batch_size=256, model_config=model_config)
