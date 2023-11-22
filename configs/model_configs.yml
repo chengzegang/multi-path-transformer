@@ -1,0 +1,19 @@
+
+
+
+vision_model:
+  base_channels: 64
+  num_layers: 4
+  latent_size: 8
+
+audio_model:
+  in_channels: 1
+  base_channels: 32
+  num_layers: 5
+  latent_size: 16
+
+
+causal_model:
+  hidden_size: 1024
+  num_layers: 12
+  head_size: 128
