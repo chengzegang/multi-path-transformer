@@ -111,7 +111,6 @@ class MHVisionTransformer(nn.Module):
         return outputs
 
 
-
 class MPVideoTransformer(nn.Module):
     def __init__(
         self,

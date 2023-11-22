@@ -1,5 +1,6 @@
 from torch import Tensor, nn
 import torch.nn.functional as F
+from modules import Attention
 
 
 class ConvLayer(nn.Module):
@@ -64,6 +65,12 @@ class UpBlock(nn.Module):
         return x
 
 
+class Attention2d(nn.Module):
+    def __init__(self, hidden_size: int, head_size: int):
+        super().__init__()
+        self.attention = Attention(hidden_size, head_size)
+
+
 class Encoder2d(nn.Module):
     def __init__(
         self,
@@ -79,7 +86,9 @@ class Encoder2d(nn.Module):
                 for i in range(num_layers)
             ]
         )
+
         last_channels = base_channels * 2**num_layers
+        self.attention = Attention(last_channels, 128)
         self.norm_out = nn.GroupNorm(32, last_channels)
         self.nonlinear_out = nn.SiLU(inplace=True)
         self.conv_latent_out = nn.Conv2d(
@@ -91,6 +100,9 @@ class Encoder2d(nn.Module):
         x = self.conv_in(x)
         for layer in self.layers:
             x = layer(x)
+        x = x + self.attention(x.flatten(-2).transpose(-1, -2))[0].transpose(
+            -1, -2
+        ).view_as(x)
         x = self.norm_out(x)
         x = self.nonlinear_out(x)
         x = self.conv_latent_out(x)
@@ -113,6 +125,7 @@ class Decoder2d(nn.Module):
             stride=1,
             padding=1,
         )
+        self.attention = Attention(base_channels * 2**num_layers, 128)
         self.layers = nn.ModuleList(
             [
                 UpBlock(base_channels * (2**i), base_channels * (2 ** (i - 1)))
@@ -125,6 +138,9 @@ class Decoder2d(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.conv_latent_in(x)
+        x = x + self.attention(x.flatten(-2).transpose(-1, -2))[0].transpose(
+            -1, -2
+        ).view_as(x)
         for layer in self.layers:
             x = layer(x)
         x = self.norm_out(x)

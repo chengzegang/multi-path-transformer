@@ -3,7 +3,6 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 from typing import List, Optional, Tuple
 from torch.utils.checkpoint import checkpoint
-import torch
 import bitsandbytes as bnb
 
 

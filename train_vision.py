@@ -1,5 +1,5 @@
 import os
-from torch.utils.data import DataLoader, IterableDataset
+from torch.utils.data import DataLoader, IterDataPipe
 import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
@@ -11,24 +11,18 @@ from vision import Autoencoder2d
 import wandb
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import datapipes as dp
+from torch import Tensor
+from laion5b import Laion5B
 
 
-class ImageCorpus(IterableDataset):
-    def __init__(self, root: str, image_size: int = 256):
-        self.image_size = image_size
-        self.root = root
-
-    def __iter__(self):
-        for f in glob.iglob(self.root + "**/*.JPEG", recursive=True):
-            img = Image.open(f).convert("RGB")
-            img = TF.resize(img, self.image_size, antialias=True)
-            img = TF.center_crop(img, self.image_size)
-            img = TF.pil_to_tensor(img)
-            img = TF.to_dtype(img, dtype=torch.float32, scale=True)
-            inputs = TF.normalize(
-                img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-            )
-            yield inputs, img
+def load_image(path: str, size: int = 256) -> Tensor:
+    img = Image.open(path).convert("RGB")
+    img = TF.resize(img, size, antialias=True)
+    img = TF.center_crop(img, size)
+    img = TF.pil_to_tensor(img)
+    img = TF.to_dtype(img, dtype=torch.float32, scale=True)
+    inputs = TF.normalize(img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    return inputs, img
 
 
 def exponential_decay(decay_rate: float, min_factor: float, step: int) -> float:
@@ -44,12 +38,19 @@ def train(
 ):
     torch.set_num_interop_threads(16)
     torch.set_num_threads(16)
+    os.makedirs("models", exist_ok=True)
     wandb.init(
-        name="Multi-Path-Transformer",
+        name="Multi-Path-Transformer-Vision-Encoder",
         project="Multi-Path-Transformer",
         id="vision-encoder",
     )
-    dataset = ImageCorpus(root)
+    dataset = (
+        dp.iter.FileLister(root, recursive=True)
+        .filter(lambda x: x.lower().endswith(".jpeg"))
+        .shuffle()
+        .sharding_filter()
+        .map(lambda x: load_image(x, 256))
+    )
     dl = DataLoader(dataset, batch_size=batch_size, drop_last=False, num_workers=16)
     model = Autoencoder2d(**model_config)
     try:
