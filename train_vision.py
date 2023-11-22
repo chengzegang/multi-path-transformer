@@ -1,3 +1,4 @@
+from functools import partial
 import os
 from torch.utils.data import DataLoader, IterDataPipe
 import torch
@@ -14,22 +15,56 @@ from torch.utils.data import datapipes as dp
 from torch import Tensor
 from laion5b import Laion5B
 import warnings
+from PIL import ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 warnings.filterwarnings("ignore")
 
-def load_image(img: Image.Image, size: int = 256) -> Tensor:
-    img = TF.resize(img, size, antialias=True)
-    img = TF.center_crop(img, size)
-    img = TF.pil_to_tensor(img)
-    img = TF.to_dtype(img, dtype=torch.float32, scale=True)
-    inputs = TF.normalize(img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    return inputs, img
+
+def load_image(img: Image.Image, size: int = 256, target_size: int = 512) -> Tensor:
+    target = TF.resize(img, target_size, antialias=True)
+    target = TF.center_crop(target, target_size)
+    target = TF.pil_to_tensor(target).clone()
+    target = TF.to_dtype(target, dtype=torch.float32, scale=True)
+
+    inputs = TF.resize(img, size, antialias=True)
+    inputs = TF.center_crop(inputs, size)
+    inputs = TF.pil_to_tensor(inputs)
+    inputs = TF.to_dtype(inputs, dtype=torch.float32, scale=True).clone()
+    inputs = TF.normalize(inputs, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    return inputs, target
 
 
 def exponential_decay(decay_rate: float, min_factor: float, step: int) -> float:
     return max(min_factor, decay_rate**step)
 
 
+def is_ext(path: str, ext: str) -> bool:
+    return path.lower().endswith(ext)
+
+
+def get_dataset(name: str, root: str, ext: str | None = "jpeg") -> IterDataPipe:
+    if name == "laion5b":
+        return dp.iter.IterableWrapper(Laion5B(root)).sharding_filter()
+    elif name == "folder":
+        return (
+            dp.iter.FileLister(root, recursive=True)
+            .filter(partial(is_ext, ext=ext))
+            .shuffle()
+            .sharding_filter()
+            .map(lambda x: Image.open(x).convert("RGB"))
+        )
+
+
+def collate_fn(batch: list[Tensor]) -> Tensor:
+    inputs, targets = zip(*batch)
+    inputs = torch.stack(inputs)
+    targets = torch.stack(targets)
+    return inputs, targets
+
+
 def train(
+    dataset_name: str,
     root: str,
     batch_size: int = 32,
     lr: float = 1e-4,
@@ -44,10 +79,16 @@ def train(
         project="Multi-Path-Transformer",
         id="vision-encoder",
     )
-    dataset = (
-        dp.iter.IterableWrapper(Laion5B(root)).sharding_filter().map(lambda x: load_image(x, 256))
+    dataset = get_dataset(dataset_name, root).map(
+        partial(load_image, size=256, target_size=512)
     )
-    dl = DataLoader(dataset, batch_size=batch_size, drop_last=False, num_workers=16)
+    dl = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        drop_last=False,
+        num_workers=16,
+        collate_fn=collate_fn,
+    )
     model = Autoencoder2d(**model_config)
     try:
         ckpts = glob.glob("models/vison*.pt")
@@ -61,9 +102,9 @@ def train(
     sched = LambdaLR(opt, lr_lambda=lambda x: exponential_decay(0.9996, 0.01, x))
     idx = 0
     grad_accum = 1
-    #proxy_model = torch.compile(
+    # proxy_model = torch.compile(
     #    model, fullgraph=True, dynamic=False, mode="max-autotune"
-    #)
+    # )
     for i, (inputs, targets) in enumerate(pbar := tqdm(dl)):
         grad_accum = max(64, i // 1000 + 1)
         targets = (
@@ -77,7 +118,10 @@ def train(
             .contiguous(memory_format=torch.channels_last)
         )
         outputs = model(inputs)
-        loss = F.l1_loss(outputs, targets)
+        up_scaled_outputs = F.interpolate(
+            outputs, size=512, mode="nearest", align_corners=False, antialias=True
+        )
+        loss = F.l1_loss(up_scaled_outputs, targets)
         pbar.set_description(f"{idx} loss {loss:.4f} lr {sched.get_last_lr()[0]:.4e}")
         loss.backward()
         if i % grad_accum == 0:
@@ -107,4 +151,20 @@ if __name__ == "__main__":
         "num_layers": 4,
         "latent_size": 8,
     }
-    train('/scratch/work/public/ml-datasets/laion2B-en-data/', batch_size=256, model_config=model_config)
+
+    local_config = {
+        "dataset_name": "folder",
+        "root": "/mnt/f/datasets/imagenet/",
+        "batch_size": 32,
+    }
+
+    greene_config = {
+        "dataset_name": "laion5b",
+        "root": "/scratch/work/public/ml-datasets/laion2B-en-data/",
+        "batch_size": 256,
+    }
+
+    train(
+        **local_config,
+        model_config=model_config,
+    )
