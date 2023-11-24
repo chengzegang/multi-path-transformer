@@ -134,7 +134,7 @@ def train(
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     enable_device_mesh: bool = False,
-    enable_compiler: bool = False,
+    enable_compiler: bool = True,
 ):
     device = torch.device(device)
     dtype = getattr(torch, dtype)
@@ -272,8 +272,8 @@ def train(
 
 if __name__ == "__main__":
     greene_config = {
-        'root': '/scratch/work/public/ml-datasets/pile/train/',
-        'name': 'greene',
-        'data_name': 'pile',
+        "root": "/scratch/work/public/ml-datasets/pile/train/",
+        "name": "greene",
+        "data_name": "webtext",
     }
-    train(**greene_config, max_size=4096)
+    train(**greene_config, max_size=512)

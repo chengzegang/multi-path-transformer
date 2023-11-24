@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from tqdm.auto import tqdm  # type: ignore
 from torch.backends import cudnn, cuda
 
-from modules import Decoder, MHLinear, MHRMSNorm
+from modules import Decoder, MPLinear, MSNorm
 from vision import Autoencoder2d
 from audio import Autoencoder1d
 from torch import Tensor, nn  # type: ignore
@@ -58,7 +58,7 @@ class AGI(nn.Module):
         self.embed_tokens = nn.Embedding(
             vocab_size, hidden_size, padding_idx=padding_idx, dtype=torch.bfloat16
         )
-        self.embed_norm = MHRMSNorm(hidden_size)
+        self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, head_size)
         self.lm_head = nn.Linear(hidden_size, vocab_size, dtype=torch.bfloat16)
         self.token_seen = 0

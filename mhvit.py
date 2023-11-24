@@ -1,5 +1,5 @@
 import math
-from modules import Decoder, MHRMSNorm, MHLinear, Mixin
+from modules import Decoder, MSNorm, MPLinear, Mixin
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F

@@ -45,7 +45,7 @@ class Mixin(nn.Module):
         return out
 
 
-class MHLinear(nn.Module):
+class MPLinear(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -66,7 +66,7 @@ class MHLinear(nn.Module):
         return x
 
 
-class MHLinearLogSumExp(nn.Module):
+class MPLinearMean(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -83,11 +83,11 @@ class MHLinearLogSumExp(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x = x.view(*x.shape[:-1], -1, self.in_features)
         x = self.linear(x)
-        x = torch.logsumexp(x, dim=-2)
+        x = torch.mean(x, dim=-2)
         return x
 
 
-class MHRMSNorm(torch.nn.Module):
+class MSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.dim = dim
@@ -107,7 +107,7 @@ class MHRMSNorm(torch.nn.Module):
         return x
 
 
-class MHSwiGLU(nn.Module):
+class SwiGLU(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -119,13 +119,13 @@ class MHSwiGLU(nn.Module):
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
 
-        self.w1 = MHLinear(
+        self.w1 = MPLinear(
             in_features, hidden_features, bias=bias, dtype=torch.bfloat16
         )
-        self.w2 = MHLinear(
+        self.w2 = MPLinear(
             in_features, hidden_features, bias=bias, dtype=torch.bfloat16
         )
-        self.w3 = MHLinear(
+        self.w3 = MPLinear(
             hidden_features, in_features, bias=bias, dtype=torch.bfloat16
         )
 
@@ -204,10 +204,10 @@ class Attention(nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.head_size = head_size
-        self.q_proj = MHLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
-        self.k_proj = MHLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
-        self.v_proj = MHLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
-        self.out_proj = MHLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
+        self.q_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
+        self.k_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
+        self.v_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
+        self.out_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
         self.rotary = RotaryEmbedding(head_size)
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
@@ -257,17 +257,14 @@ class Attention(nn.Module):
 class DecoderLayer(nn.Module):
     def __init__(self, hidden_size: int, head_size: int, mlp_dim: int):
         super().__init__()
-        self.pre_attention_norm = MHRMSNorm(hidden_size)
+        self.pre_attention_norm = MSNorm(hidden_size)
         self.attention = Attention(hidden_size, head_size)
 
-        self.pre_mixin1_norm = MHRMSNorm(hidden_size)
-        self.mixin1 = Mixin(hidden_size, hidden_size)
+        self.pre_mixin_norm = MSNorm(hidden_size)
+        self.mixin = Mixin(hidden_size, hidden_size)
 
-        self.pre_mlp_norm = MHRMSNorm(hidden_size)
-        self.mlp = MHSwiGLU(hidden_size, hidden_size)
-
-        self.pre_mixin2_norm = MHRMSNorm(hidden_size)
-        self.mixin2 = Mixin(hidden_size, hidden_size)
+        self.pre_mlp_norm = MSNorm(hidden_size)
+        self.mlp = SwiGLU(hidden_size, hidden_size)
 
     def forward(
         self,
@@ -281,17 +278,12 @@ class DecoderLayer(nn.Module):
             hidden_states, key_value_states, attn_mask
         )
         residual = residual + hidden_states
-        hidden_states = self.pre_mixin1_norm(residual)
-        hidden_states = self.mixin1(hidden_states)
-
-        hidden_states = residual + hidden_states
-        hidden_states = self.pre_mlp_norm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.pre_mixin_norm(residual)
+        hidden_states = self.mixin(hidden_states)
 
         residual = residual + hidden_states
-        hidden_states = self.pre_mixin2_norm(residual)
-        hidden_states = self.mixin2(hidden_states)
-        hidden_states = residual + hidden_states
+        hidden_states = self.pre_mlp_norm(hidden_states)
+        hidden_states = self.mlp(hidden_states)
 
         return hidden_states, key_value_states  # type: ignore
 
