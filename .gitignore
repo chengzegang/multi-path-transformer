@@ -116,8 +116,13 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-models/
+
+
+
+
+models/*
 wandb/
 *.out
 !models/embedding_tensor.pt
 torch/
+!.gitkeep
