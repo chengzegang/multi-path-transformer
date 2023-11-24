@@ -9,7 +9,7 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 
-from modules import Decoder, MHRMSNorm, MHLinear
+from modules import Decoder, MHRMSNorm, MHLinear, MHLinearMean
 
 cudnn.benchmark = True
 cuda.matmul.allow_tf32 = True
@@ -36,7 +36,7 @@ class LLM(nn.Module):
         )
         self.embed_norm = MHRMSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, head_size)
-        self.lm_head = MHLinear(hidden_size, vocab_size, dtype=torch.bfloat16)
+        self.lm_head = MHLinearMean(hidden_size, vocab_size, dtype=torch.bfloat16)
         self.token_seen = 0
 
     def save_to_file(self, path: str):
@@ -101,6 +101,7 @@ class LLM(nn.Module):
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, _ = self.decoder(input_embeds, attn_mask=attn_mask)
         pred_logits = self.lm_head(pred_logits)
+        print(pred_logits.shape, labels.shape)
         loss = F.cross_entropy(
             pred_logits[:, :-1].flatten(0, 1),
             labels[:, 1:].reshape(-1),
