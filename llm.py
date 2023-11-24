@@ -23,6 +23,7 @@ class LLM(nn.Module):
         hidden_size: int = 512,
         num_layers: int = 80,
         head_size: int = 64,
+        mlp_dim: int = 1366,
         padding_idx: int = 0,
     ):
         super().__init__()
@@ -34,8 +35,9 @@ class LLM(nn.Module):
         self.embed_tokens = nn.Embedding(
             vocab_size, embedding_size, padding_idx=padding_idx, dtype=torch.bfloat16
         )
-        self.embed_norm = MSNorm(hidden_size)
-        self.decoder = Decoder(hidden_size, num_layers, head_size)
+        self.embed_norm = MSNorm(embedding_size)
+        self.decoder = Decoder(hidden_size, num_layers, head_size, mlp_dim)
+        self.lm_head_norm = MSNorm(embedding_size)
         self.lm_head = nn.Linear(embedding_size, vocab_size, dtype=torch.bfloat16)
         self.token_seen = 0
 
@@ -100,6 +102,7 @@ class LLM(nn.Module):
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, _ = self.decoder(input_embeds, attn_mask=attn_mask)
+        pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
         loss = F.cross_entropy(
             pred_logits[:, :-1].flatten(0, 1),

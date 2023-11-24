@@ -120,15 +120,15 @@ def train(
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
-    lr: float = 0.002,
+    lr: float = 0.0005,
     num_epochs: int = 10,
     save_every: int = 100,
-    grad_accum: int = 8,
+    grad_accum: int = 1,
     max_size: int = 512,
     batch_size: int = 4,
     num_workers: int = 16,
     model_config: dict = {
-        "embedding_size": 8192,
+        "embedding_size": 4096,
         "hidden_size": 512,
         "num_layers": 32,
         "head_size": 128,
@@ -158,22 +158,19 @@ def train(
         print(e)
         print("Starting from scratch")
     model.embed_tokens.from_pretrained(
-        torch.load("models/embedding_tensor.pt"), freeze=True
+        torch.load("models/embedding_tensor.pt"), freeze=False
     )
     model.enable_gradient_checkpointing()
     model = model.to(device).to(dtype)
     # opt = AdamW(model.parameters(), lr=lr, weight_decay=0, fused=True)
-    opt = bnb.optim.AdamW8bit(
-        [
-            {"params": model.embed_norm.parameters()},
-            {"params": model.decoder.parameters()},
-            {"params": model.lm_head.parameters()},
-        ],
+    opt = AdamW(
+        model.parameters(),
         lr=lr,
-        weight_decay=0.1,
-        optim_bits=8,
+        weight_decay=1e-1,
+        fused=True,
+        betas=(0.9, 0.98),
     )
-    sched = LambdaLR(opt, partial(expoential_lr, 2000, 0.999, 0.01))
+    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.999, 0.01))
     try:
         # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))

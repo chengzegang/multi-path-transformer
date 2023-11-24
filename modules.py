@@ -43,31 +43,40 @@ class Mixin(nn.Module):
         self.in_features = in_features
         out_features = out_features or in_features
         self.out_features = out_features
-        self.scale_proj = MPLinear(
+
+        self.q_proj = nn.Linear(
             in_features, out_features, bias=bias, dtype=dtype, device=device
         )
-        self.k_proj = MPLinear(
+        self.k_proj = nn.Linear(
             in_features, out_features, bias=bias, dtype=dtype, device=device
         )
-        self.v_proj = MPLinear(
+        self.v_proj = nn.Linear(
             in_features, out_features, bias=bias, dtype=dtype, device=device
         )
-        self.o_proj = MPLinear(
+        self.o_proj = nn.Linear(
             out_features, out_features, bias=bias, dtype=dtype, device=device
         )
         self.rotary = RotaryEmbedding(out_features)
 
+    def reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.normal_(p, std=1.0 / math.sqrt(p.shape[1]))
+            else:
+                nn.init.zeros_(p)
+
     def forward(self, x: Tensor) -> Tensor:
-        q = self.scale_proj(x)
-        k = self.scale_proj(x)
-        v = self.scale_proj(x)
-        q = q.view(*q.shape[:-1], -1, self.in_features)
-        k = k.view(*k.shape[:-1], -1, self.in_features)
-        v = v.view(*v.shape[:-1], -1, self.in_features)
+        x = x.view(*x.shape[:-1], -1, self.in_features)
+
+        x = torch.softmax(x + 1e-6, dim=-2) * x.mean(dim=-2, keepdim=True)
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
         q, k = self.rotary(q, k)
         out = F.scaled_dot_product_attention(q, k, v)
-        out = out.flatten(-2)
         out = self.o_proj(out)
+        out = out.flatten(-2)
         return out
 
 
@@ -156,7 +165,10 @@ class RotaryEmbedding(torch.nn.Module):
         max_seq_length = 10000
         inv_freq = 1.0 / (
             max_seq_length
-            ** (torch.arange(0, dim_model, 2, dtype=torch.bfloat16) / dim_model)
+            ** (
+                torch.arange(0, dim_model, 2, dtype=torch.bfloat16, requires_grad=False)
+                / dim_model
+            )
         )
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
@@ -165,7 +177,7 @@ class RotaryEmbedding(torch.nn.Module):
         self.register_buffer("_sin_cached", s_sin_cached, persistent=False)
 
     def _update_cos_sin_tables(self, seq_len) -> Tuple[torch.Tensor, torch.Tensor]:
-        t = torch.arange(seq_len, dtype=torch.bfloat16)
+        t = torch.arange(seq_len, dtype=torch.bfloat16, requires_grad=False)
         freqs = torch.einsum("i,j->ij", t, self.inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
         _cos_cached = emb.cos()[None, None, :, :]
@@ -243,11 +255,10 @@ class DecoderLayer(nn.Module):
         self.pre_attention_norm = MSNorm(hidden_size)
         self.attention = Attention(hidden_size, head_size)
 
-        self.pre_mixin_norm = MSNorm(hidden_size)
-        self.mixin = Mixin(hidden_size, hidden_size)
-
         self.pre_mlp_norm = MSNorm(hidden_size)
         self.mlp = SwiGLU(hidden_size, mlp_dim)
+
+        self.mixin = Mixin(hidden_size, hidden_size)
 
     def forward(
         self,
@@ -256,23 +267,31 @@ class DecoderLayer(nn.Module):
         attn_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         residual = hidden_states
-        hidden_states = self.pre_attention_norm(hidden_states)
+        hidden_states = self.pre_attention_norm(residual)
         hidden_states, key_value_states = self.attention(
             hidden_states, key_value_states, attn_mask
         )
-        residual = residual + hidden_states
-        hidden_states = self.pre_mixin_norm(residual)
-        hidden_states = self.mixin(hidden_states)
 
         residual = residual + hidden_states
         hidden_states = self.pre_mlp_norm(hidden_states)
         hidden_states = self.mlp(hidden_states)
 
-        return hidden_states, key_value_states  # type: ignore
+        residual = residual + hidden_states
+        hidden_states = self.mixin(hidden_states)
+
+        residual = residual + hidden_states
+
+        return residual, key_value_states  # type: ignore
 
 
 class Decoder(nn.Module):
-    def __init__(self, hidden_size: int, num_layers: int, head_size: int = 128):
+    def __init__(
+        self,
+        hidden_size: int = 512,
+        num_layers: int = 32,
+        head_size: int = 128,
+        mlp_dim: int = 1366,
+    ):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -282,7 +301,7 @@ class Decoder(nn.Module):
                 DecoderLayer(
                     hidden_size=hidden_size,
                     head_size=head_size,
-                    mlp_dim=hidden_size * 8 // 3,
+                    mlp_dim=mlp_dim,
                 )
                 for i in range(num_layers)
             ]
