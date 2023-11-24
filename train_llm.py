@@ -309,7 +309,7 @@ if __name__ == "__main__":
         "name": "greene",
         "data_name": "pile",
         "max_size": 4096,
-        "grad_accum": 32,
+        "grad_accum": 8,
         "batch_size": 2,
         "model_config": {
             "embedding_size": 8192,
@@ -317,6 +317,7 @@ if __name__ == "__main__":
             "num_layers": 80,
             "head_size": 64,
         },
+        "ddp": True,
     }
     local_config = {
         "root": "/home/caleb/data/pile/train/",
