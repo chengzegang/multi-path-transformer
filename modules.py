@@ -66,7 +66,7 @@ class MHLinear(nn.Module):
         return x
 
 
-class MHLinearSoftmax(nn.Module):
+class MHLinearLogSumExp(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -83,7 +83,7 @@ class MHLinearSoftmax(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x = x.view(*x.shape[:-1], -1, self.in_features)
         x = self.linear(x)
-        x = torch.softmax(x, dim=-2)
+        x = torch.logsumexp(x, dim=-2)
         return x
 
 
