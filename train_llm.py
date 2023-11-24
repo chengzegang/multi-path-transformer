@@ -310,12 +310,12 @@ if __name__ == "__main__":
         "data_name": "pile",
         "max_size": 4096,
         "grad_accum": 32,
-        "batch_size": 8,
+        "batch_size": 2,
         "model_config": {
             "embedding_size": 8192,
             "hidden_size": 512,
             "num_layers": 80,
-            "head_size": 128,
+            "head_size": 64,
         },
     }
     local_config = {
