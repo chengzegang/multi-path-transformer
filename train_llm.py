@@ -276,6 +276,8 @@ if __name__ == "__main__":
         "name": "greene",
         "data_name": "pile",
         "max_size": 4096,
+        "grad_accum": 32,
+        "batch_size": 8,
     }
     local_config = {
         "root": "/home/caleb/data/pile/train/",
