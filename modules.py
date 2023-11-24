@@ -61,7 +61,9 @@ class Mixin(nn.Module):
         q = self.scale_proj(x)
         k = self.scale_proj(x)
         v = self.scale_proj(x)
-        x = x.view(*x.shape[:-1], -1, self.in_features)
+        q = q.view(*q.shape[:-1], -1, self.in_features)
+        k = k.view(*k.shape[:-1], -1, self.in_features)
+        v = v.view(*v.shape[:-1], -1, self.in_features)
         q, k = self.rotary(q, k)
         out = F.scaled_dot_product_attention(q, k, v)
         out = out.flatten(-2)
@@ -122,7 +124,6 @@ class SwiGLU(nn.Module):
     ) -> None:
         super().__init__()
         out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
 
         self.w1 = MPLinear(
             in_features, hidden_features, bias=bias, dtype=torch.bfloat16
