@@ -329,7 +329,7 @@ if __name__ == "__main__":
         "model_config": {
             "embedding_size": 8192,
             "hidden_size": 512,
-            "num_layers": 80,
+            "num_layers": 32,
             "head_size": 64,
         },
         "ddp": False,
