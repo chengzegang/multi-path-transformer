@@ -120,3 +120,4 @@ models/
 wandb/
 *.out
 !models/embedding_tensor.pt
+torch/

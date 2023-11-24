@@ -61,6 +61,7 @@ def step_model(
     optimized_model = optimize_model(model, enable_compiler)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
+            grad_accum = min(64, step // 1000 + 1)
             batch = batch.to(device)
             out = optimized_model(**batch, labels=batch.input_ids)
             out["loss"].backward()
@@ -118,7 +119,7 @@ def train(
     checkpoint_path: str = "models",
     lr: float = 2e-4,
     num_epochs: int = 10,
-    save_every: int = 1000,
+    save_every: int = 100,
     grad_accum: int = 10,
     max_size: int = 512,
     batch_size: int = 2,
@@ -270,4 +271,9 @@ def train(
 
 
 if __name__ == "__main__":
-    train()
+    greene_config = {
+        'root': '/scratch/work/public/ml-datasets/pile/train/',
+        'name': 'greene',
+        'data_name': 'pile',
+    }
+    train(**greene_config, max_size=4096)
