@@ -282,6 +282,12 @@ if __name__ == "__main__":
         "max_size": 4096,
         "grad_accum": 32,
         "batch_size": 8,
+        "model_config": {
+            "embedding_size": 8192,
+            "hidden_size": 512,
+            "num_layers": 32,
+            "head_size": 128,
+        },
     }
     local_config = {
         "root": "/home/caleb/data/pile/train/",
