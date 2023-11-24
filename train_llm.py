@@ -125,7 +125,7 @@ def train(
     save_every: int = 100,
     grad_accum: int = 50,
     max_size: int = 512,
-    batch_size: int = 2,
+    batch_size: int = 4,
     num_workers: int = 16,
     model_config: dict = {
         "embedding_size": 8192,
@@ -277,6 +277,6 @@ if __name__ == "__main__":
     greene_config = {
         "root": "/scratch/work/public/ml-datasets/pile/train/",
         "name": "greene",
-        "data_name": "webtext",
+        "data_name": "pile",
     }
-    train(**greene_config, max_size=512)
+    train(**greene_config, max_size=4096)
