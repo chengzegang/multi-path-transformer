@@ -19,6 +19,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer  # type:ignore
 import wandb
 from llm import LLM
 from torch_datasets import Pile, Sentence, WebData
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
 
 
 def expoential_lr(
@@ -58,11 +61,19 @@ def step_model(
     step: int,
     pbar: tqdm,
     enable_compiler: bool = True,
+    ddp: bool = False,
 ):
     loss = 0
     input_ids = None
     output_ids = None
     optimized_model = optimize_model(model, enable_compiler)
+    if ddp:
+        optimized_model = DDP(
+            optimized_model,
+            [device],
+            gradient_as_bucket_view=True,
+            static_graph=True,
+        )
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
@@ -136,10 +147,14 @@ def train(
     device: str = "cuda",
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
-    enable_device_mesh: bool = False,
+    ddp: bool = False,
     enable_compiler: bool = False,
 ):
-    device = torch.device(device)
+    local_rank = int(os.getenv("LOCAL_RANK", 0))
+    if ddp:
+        torch.cuda.set_device(local_rank)
+        dist.init_process_group(backend="nccl", init_method="env://")
+    device = torch.device("cuda", local_rank)
     dtype = getattr(torch, dtype)
 
     os.makedirs(checkpoint_path, exist_ok=True)
@@ -162,14 +177,24 @@ def train(
     )
     model.enable_gradient_checkpointing()
     model = model.to(device).to(dtype)
-
-    opt = AdamW(
-        model.parameters(),
-        lr=lr,
-        weight_decay=1e-1,
-        fused=True,
-        betas=(0.9, 0.98),
-    )
+    opt = None
+    if ddp:
+        opt = ZRO(
+            model.parameters(),
+            AdamW,
+            lr=lr,
+            weight_decay=1e-1,
+            betas=(0.9, 0.98),
+            parameters_as_bucket_view=True,
+        )
+    else:
+        opt = AdamW(
+            model.parameters(),
+            lr=lr,
+            weight_decay=1e-1,
+            fused=True,
+            betas=(0.9, 0.98),
+        )
     sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.999, 0.01))
     try:
         opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
@@ -242,34 +267,38 @@ def train(
         step,
         pbar,
         enable_compiler,
+        ddp,
     )
 
     for epoch, step, loss, input_ids, output_ids in iteration:
-        in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
-        out_text = tokenizer.decode(
-            output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
-        )
-        pbar.write(f"IN : {in_text:64s}")
-        pbar.write(f"OUT: {out_text:64s}")
-        wandb.log(
-            {
-                "in_text": in_text,
-                "out_text": out_text,
-                "loss": loss,
-                "lr": sched.get_last_lr()[0],
-            },
-            step=step,
-        )
-        if step % save_every == 0 and math.isfinite(loss):
-            ckpts = glob.glob("models/llm*.pt")
-            if len(ckpts) > 3:
-                os.remove(
-                    sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[0]
-                )
-            model.eval()
-            torch.save(model.state_dict(), f"models/llm-{step}.pt")
-            torch.save(opt.state_dict(), "models/opt.pt")
-            torch.save(sched.state_dict(), "models/sched.pt")
+        if local_rank == 0:
+            in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
+            out_text = tokenizer.decode(
+                output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
+            )
+            pbar.write(f"IN : {in_text:64s}")
+            pbar.write(f"OUT: {out_text:64s}")
+            wandb.log(
+                {
+                    "in_text": in_text,
+                    "out_text": out_text,
+                    "loss": loss,
+                    "lr": sched.get_last_lr()[0],
+                },
+                step=step,
+            )
+            if step % save_every == 0 and math.isfinite(loss):
+                ckpts = glob.glob("models/llm*.pt")
+                if len(ckpts) > 3:
+                    os.remove(
+                        sorted(
+                            ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0])
+                        )[0]
+                    )
+                model.eval()
+                torch.save(model.state_dict(), f"models/llm-{step}.pt")
+                torch.save(opt.state_dict(), "models/opt.pt")
+                torch.save(sched.state_dict(), "models/sched.pt")
 
     pbar.close()
 
@@ -294,6 +323,8 @@ if __name__ == "__main__":
         "name": "local",
         "data_name": "webtext",
         "max_size": 512,
+        "grad_accum": 1,
+        "ddp": True,
     }
     host = os.uname().nodename
     config = None
