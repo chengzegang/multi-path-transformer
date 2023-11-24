@@ -285,7 +285,7 @@ if __name__ == "__main__":
         "model_config": {
             "embedding_size": 8192,
             "hidden_size": 512,
-            "num_layers": 32,
+            "num_layers": 80,
             "head_size": 128,
         },
     }
