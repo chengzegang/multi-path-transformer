@@ -134,7 +134,7 @@ def train(
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     enable_device_mesh: bool = False,
-    enable_compiler: bool = True,
+    enable_compiler: bool = False,
 ):
     device = torch.device(device)
     dtype = getattr(torch, dtype)
