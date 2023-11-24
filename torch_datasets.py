@@ -149,7 +149,7 @@ class BilibiliVideoStreams(Iterable):
 class WebData(IterableDataset):
     def __init__(self, **kwargs):
         super().__init__()
-        self.dataset = load_dataset("wikitext", "wikitext-103-raw-v1", split="train")
+        self.dataset = load_dataset("c4", "en", split="train", streaming=True).shuffle()
 
     def __iter__(self):
         for d in self.dataset:
