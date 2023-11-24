@@ -151,6 +151,7 @@ def train(
     enable_compiler: bool = False,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
+    world_size = int(os.getenv("WORLD_SIZE", 1))
     if ddp:
         torch.cuda.set_device(local_rank)
         dist.init_process_group(backend="nccl", init_method="env://")
@@ -252,7 +253,7 @@ def train(
             "num_params": num_params(model),
         },
     )
-    total_tokens = 50000000 * 22
+    total_tokens = 50000000 * 22 // world_size
     num_samples = total_tokens // max_size
     num_batches = num_samples // batch_size
     pbar = tqdm(total=num_batches, dynamic_ncols=True)
