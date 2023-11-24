@@ -61,7 +61,6 @@ def step_model(
     optimized_model = optimize_model(model, enable_compiler)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
-            grad_accum = min(64, step // 1000 + 1)
             batch = batch.to(device)
             out = optimized_model(**batch, labels=batch.input_ids)
             out["loss"].backward()
@@ -72,8 +71,8 @@ def step_model(
                 f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}"
             )
             pbar.update()
-            if i % grad_accum == 0:
-                nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+            if i % grad_accum == 0 and i > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 opt.step()
                 sched.step()
                 opt.zero_grad()
@@ -117,10 +116,10 @@ def train(
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
-    lr: float = 2e-4,
+    lr: float = 0.002,
     num_epochs: int = 10,
     save_every: int = 100,
-    grad_accum: int = 10,
+    grad_accum: int = 50,
     max_size: int = 512,
     batch_size: int = 2,
     num_workers: int = 16,
@@ -167,10 +166,10 @@ def train(
             {"params": model.lm_head.parameters()},
         ],
         lr=lr,
-        weight_decay=0,
+        weight_decay=0.1,
         optim_bits=8,
     )
-    sched = LambdaLR(opt, partial(expoential_lr, 0.999, 0.01))
+    sched = LambdaLR(opt, partial(expoential_lr, 0.99, 0.01))
     try:
         # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
