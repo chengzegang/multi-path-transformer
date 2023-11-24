@@ -123,9 +123,9 @@ def train(
     lr: float = 0.0005,
     num_epochs: int = 10,
     save_every: int = 100,
-    grad_accum: int = 1,
+    grad_accum: int = 32,
     max_size: int = 512,
-    batch_size: int = 4,
+    batch_size: int = 8,
     num_workers: int = 16,
     model_config: dict = {
         "embedding_size": 4096,
@@ -268,6 +268,8 @@ def train(
                 )
             model.eval()
             torch.save(model.state_dict(), f"models/llm-{step}.pt")
+            torch.save(opt.state_dict(), "models/opt.pt")
+            torch.save(sched.state_dict(), "models/sched.pt")
 
     pbar.close()
 
