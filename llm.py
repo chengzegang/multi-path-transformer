@@ -9,7 +9,7 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 
-from modules import Decoder, MSNorm, MPLinear, MPLinearMean
+from modules import Decoder, MSNorm, MPLinear
 
 cudnn.benchmark = True
 cuda.matmul.allow_tf32 = True
@@ -36,7 +36,7 @@ class LLM(nn.Module):
         )
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, head_size)
-        self.lm_head = MPLinearMean(hidden_size, vocab_size, dtype=torch.bfloat16)
+        self.lm_head = nn.Linear(embedding_size, vocab_size, dtype=torch.bfloat16)
         self.token_seen = 0
 
     def save_to_file(self, path: str):

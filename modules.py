@@ -71,29 +71,6 @@ class Mixin(nn.Module):
         return out
 
 
-class MPLinearMean(nn.Module):
-    def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        dtype: torch.dtype = torch.bfloat16,
-        device: Optional[torch.device | str] = None,
-    ):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.linear = nn.Linear(in_features, out_features, bias, device, dtype)
-        self.linear.weight.data.normal_(mean=0.0, std=math.sqrt(1 / in_features))
-        self.linear.bias.data.zero_()
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = x.view(*x.shape[:-1], -1, self.in_features)
-        x = self.linear(x)
-        x = torch.mean(x, dim=-2)
-        return x
-
-
 class MSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
