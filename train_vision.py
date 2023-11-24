@@ -185,6 +185,6 @@ if __name__ == "__main__":
     }
 
     train(
-        **local_config,
+        **greene_config,
         model_config=model_config,
     )
