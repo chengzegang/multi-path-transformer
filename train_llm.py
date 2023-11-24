@@ -1,3 +1,4 @@
+import glob
 import inspect
 import math
 import os
@@ -146,10 +147,12 @@ def train(
     tokenizer.save_pretrained(checkpoint_path)
     print(f"total params: {num_params(model)}")
     try:
-        model.eval()
-        model.load_from_file(os.path.join(checkpoint_path, "model.pt"))
+        ckpts = glob.glob("models/llm*.pt")
+        ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
+        model.load_state_dict(torch.load(ckpt))
     except Exception as e:
         print(e)
+        print("Starting from scratch")
     model.enable_gradient_checkpointing()
     model = model.to(device).to(dtype)
     opt = AdamW(model.parameters(), lr=lr, weight_decay=0, fused=True)
@@ -245,7 +248,11 @@ def train(
             step=step,
         )
         if step % save_every == 0 and math.isfinite(loss):
-            save_checkpoint(checkpoint_path, model, opt, sched, step)
+            ckpts = glob.glob("models/llm*.pt")
+            if len(ckpts) > 3:
+                os.remove(sorted(ckpts)[0])
+            model.eval()
+            torch.save(model.state_dict(), f"models/llm-{step}.pt")
 
     pbar.close()
 
