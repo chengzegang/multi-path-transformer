@@ -1,48 +1,10 @@
+import math
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
 from typing import List, Optional, Tuple
 from torch.utils.checkpoint import checkpoint
 import bitsandbytes as bnb
-
-
-class Mixin(nn.Module):
-    def __init__(
-        self,
-        in_features: int,
-        out_features: Optional[int] = None,
-        bias=True,
-        dtype=torch.bfloat16,
-        device: Optional[torch.device | str] = None,
-    ):
-        super().__init__()
-        self.in_features = in_features
-        out_features = out_features or in_features
-        self.out_features = out_features
-        self.scale_proj = nn.Linear(
-            in_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.k_proj = nn.Linear(
-            in_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.v_proj = nn.Linear(
-            in_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.o_proj = nn.Linear(
-            out_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.rotary = RotaryEmbedding(out_features)
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = x.view(*x.shape[:-1], -1, self.in_features)
-        q = self.scale_proj(x)
-        k = self.scale_proj(x)
-        v = self.scale_proj(x)
-        q, k = self.rotary(q, k)
-        out = F.scaled_dot_product_attention(q, k, v)
-        out = self.o_proj(out)
-        out = out.flatten(-2)
-        return out
 
 
 class MPLinear(nn.Module):
@@ -58,12 +20,53 @@ class MPLinear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.linear = nn.Linear(in_features, out_features, bias, device, dtype)
+        self.linear.weight.data.normal_(mean=0.0, std=math.sqrt(1 / in_features))
+        self.linear.bias.data.zero_()
 
     def forward(self, x: Tensor) -> Tensor:
         x = x.view(*x.shape[:-1], -1, self.in_features)
         x = self.linear(x)
         x = x.flatten(-2)
         return x
+
+
+class Mixin(nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: Optional[int] = None,
+        bias=True,
+        dtype=torch.bfloat16,
+        device: Optional[torch.device | str] = None,
+    ):
+        super().__init__()
+        self.in_features = in_features
+        out_features = out_features or in_features
+        self.out_features = out_features
+        self.scale_proj = MPLinear(
+            in_features, out_features, bias=bias, dtype=dtype, device=device
+        )
+        self.k_proj = MPLinear(
+            in_features, out_features, bias=bias, dtype=dtype, device=device
+        )
+        self.v_proj = MPLinear(
+            in_features, out_features, bias=bias, dtype=dtype, device=device
+        )
+        self.o_proj = MPLinear(
+            out_features, out_features, bias=bias, dtype=dtype, device=device
+        )
+        self.rotary = RotaryEmbedding(out_features)
+
+    def forward(self, x: Tensor) -> Tensor:
+        q = self.scale_proj(x)
+        k = self.scale_proj(x)
+        v = self.scale_proj(x)
+        x = x.view(*x.shape[:-1], -1, self.in_features)
+        q, k = self.rotary(q, k)
+        out = F.scaled_dot_product_attention(q, k, v)
+        out = out.flatten(-2)
+        out = self.o_proj(out)
+        return out
 
 
 class MPLinearMean(nn.Module):
@@ -79,6 +82,8 @@ class MPLinearMean(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.linear = nn.Linear(in_features, out_features, bias, device, dtype)
+        self.linear.weight.data.normal_(mean=0.0, std=math.sqrt(1 / in_features))
+        self.linear.bias.data.zero_()
 
     def forward(self, x: Tensor) -> Tensor:
         x = x.view(*x.shape[:-1], -1, self.in_features)
@@ -92,7 +97,7 @@ class MSNorm(torch.nn.Module):
         super().__init__()
         self.dim = dim
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim, dtype=torch.bfloat16) * 0.2)
+        self.weight = nn.Parameter(torch.ones(dim, dtype=torch.bfloat16))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, L, D = x.shape
@@ -264,7 +269,7 @@ class DecoderLayer(nn.Module):
         self.mixin = Mixin(hidden_size, hidden_size)
 
         self.pre_mlp_norm = MSNorm(hidden_size)
-        self.mlp = SwiGLU(hidden_size, hidden_size)
+        self.mlp = SwiGLU(hidden_size, mlp_dim)
 
     def forward(
         self,

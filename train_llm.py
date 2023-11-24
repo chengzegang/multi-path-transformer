@@ -130,7 +130,7 @@ def train(
     model_config: dict = {
         "embedding_size": 8192,
         "hidden_size": 512,
-        "num_layers": 80,
+        "num_layers": 32,
         "head_size": 128,
     },
     device: str = "cuda",
@@ -278,5 +278,18 @@ if __name__ == "__main__":
         "root": "/scratch/work/public/ml-datasets/pile/train/",
         "name": "greene",
         "data_name": "pile",
+        "max_size": 4096,
     }
-    train(**greene_config, max_size=4096)
+    local_config = {
+        "root": "/home/caleb/data/pile/train/",
+        "name": "local",
+        "data_name": "webtext",
+        "max_size": 512,
+    }
+    host = os.uname().nodename
+    config = None
+    if host == "LPC":
+        config = local_config
+    else:
+        config = greene_config
+    train(**config)
