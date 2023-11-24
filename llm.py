@@ -93,7 +93,8 @@ class LLM(nn.Module):
     def forward(
         self,
         input_ids: Tensor,
-        labels: Tensor,
+        labels: Optional[Tensor] = None,
+        past_key_values: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None,
     ):
         attn_mask = self.build_attention_mask(
@@ -101,16 +102,20 @@ class LLM(nn.Module):
         )
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
-        pred_logits, _ = self.decoder(input_embeds, attn_mask=attn_mask)
+        pred_logits, past_key_values = self.decoder(
+            input_embeds, attn_mask=attn_mask, key_value_states=past_key_values
+        )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-        loss = F.cross_entropy(
-            pred_logits[:, :-1].flatten(0, 1),
-            labels[:, 1:].reshape(-1),
-        )
+        loss = None
+        if labels is not None:
+            loss = F.cross_entropy(
+                pred_logits[:, :-1].flatten(0, 1),
+                labels[:, 1:].reshape(-1),
+            )
         if self.training:
             self.token_seen += input_ids.numel()
-        return {"logits": pred_logits, "loss": loss}
+        return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):
         key_value_states = None

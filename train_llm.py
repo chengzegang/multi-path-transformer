@@ -153,7 +153,7 @@ def train(
     try:
         ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
-        model.load_state_dict(torch.load(ckpt))
+        model.load_state_dict(torch.load(ckpt), strict=False)
     except Exception as e:
         print(e)
         print("Starting from scratch")
@@ -263,7 +263,9 @@ def train(
         if step % save_every == 0 and math.isfinite(loss):
             ckpts = glob.glob("models/llm*.pt")
             if len(ckpts) > 3:
-                os.remove(sorted(ckpts)[0])
+                os.remove(
+                    sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[0]
+                )
             model.eval()
             torch.save(model.state_dict(), f"models/llm-{step}.pt")
 
