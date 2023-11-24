@@ -123,7 +123,7 @@ def train(
     lr: float = 0.002,
     num_epochs: int = 10,
     save_every: int = 100,
-    grad_accum: int = 50,
+    grad_accum: int = 8,
     max_size: int = 512,
     batch_size: int = 4,
     num_workers: int = 16,
