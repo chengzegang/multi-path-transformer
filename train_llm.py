@@ -16,7 +16,6 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm  # type: ignore
 from transformers import AutoModelForCausalLM, AutoTokenizer  # type:ignore
-import bitsandbytes as bnb
 import wandb
 from llm import LLM
 from torch_datasets import Pile, Sentence, WebData
