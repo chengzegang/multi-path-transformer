@@ -22,8 +22,13 @@ from llm import LLM
 from torch_datasets import Pile, Sentence, WebData
 
 
-def expoential_lr(beta: float = 0.95, min_factor: float = 0.01, step: int = 0):
-    return max(beta**step, min_factor)
+def expoential_lr(
+    warmup_steps=2000, beta: float = 0.95, min_factor: float = 0.01, step: int = 0
+):
+    if step < warmup_steps:
+        return step / warmup_steps
+    else:
+        return max(beta ** (step - warmup_steps), min_factor)
 
 
 def save_checkpoint(
@@ -73,7 +78,7 @@ def step_model(
             )
             pbar.update()
             if i % grad_accum == 0:
-                nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 opt.step()
                 sched.step()
                 opt.zero_grad()
@@ -167,10 +172,10 @@ def train(
             {"params": model.lm_head.parameters()},
         ],
         lr=lr,
-        weight_decay=0,
+        weight_decay=0.1,
         optim_bits=8,
     )
-    sched = LambdaLR(opt, partial(expoential_lr, 0.999, 0.01))
+    sched = LambdaLR(opt, partial(expoential_lr, 2000, 0.999, 0.01))
     try:
         # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
