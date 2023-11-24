@@ -1,14 +1,20 @@
+import asyncio
+import glob
 import json
+import os
+from typing import Iterable
+
+import aiofiles
+import cv2 as cv
+import httpx
+import jsonlines as jl
+import sqlmodel
 import torch
 import torchvision
-from typing import Iterable
-import cv2 as cv
-import asyncio
-import httpx
-import aiofiles
-from aiofiles import os
-import sqlmodel
-from sqlmodel import SQLModel, Field, Session, create_engine, select
+from datasets import load_dataset
+from sqlmodel import Field, Session, SQLModel, create_engine, select
+from torch.utils.data import IterableDataset
+from transformers import AutoTokenizer
 
 
 class Video(SQLModel, table=True):
@@ -138,3 +144,49 @@ class BilibiliVideoStreams(Iterable):
                 return
             except Exception:
                 pass
+
+
+class WebData(IterableDataset):
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.dataset = load_dataset("wikitext", "wikitext-103-raw-v1", split="train")
+
+    def __iter__(self):
+        for d in self.dataset:
+            yield d
+
+
+class Pile(IterableDataset):
+    def __init__(self, root: str):
+        super().__init__()
+        self.root = root
+
+    def __iter__(self):
+        filepaths = glob.glob(os.path.join(self.root, "*.jsonl"))
+        for path in filepaths:
+            with jl.open(path) as file:
+                for line in file:
+                    yield line
+
+
+class Sentence(IterableDataset):
+    def __init__(
+        self, dataset: IterableDataset, max_size: int, tokenizer: AutoTokenizer
+    ):
+        self.tokenizer = tokenizer
+        # self.data = load_dataset("c4", "en", split="train", streaming=True).shuffle()
+
+        self.dataset = dataset
+        self.max_size = max_size
+
+    def __iter__(self):
+        # root = "/mnt/d/datasets/pixiv"
+        text = ""
+        for data in self.dataset:
+            t = data["text"]
+            text += t
+            tokens = self.tokenizer.tokenize(text)
+            if len(tokens) <= self.max_size:
+                continue
+            yield {"text": self.tokenizer.convert_tokens_to_string(tokens)}
+            text = ""

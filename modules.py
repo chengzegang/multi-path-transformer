@@ -236,14 +236,17 @@ class Attention(nn.Module):
 class DecoderLayer(nn.Module):
     def __init__(self, hidden_size: int, head_size: int, mlp_dim: int):
         super().__init__()
-        self.norm1 = MHRMSNorm(hidden_size)
+        self.pre_attention_norm = MHRMSNorm(hidden_size)
         self.attention = Attention(hidden_size, head_size)
 
-        self.norm2 = MHRMSNorm(hidden_size)
-        self.mixin = Mixin(hidden_size, hidden_size)
+        self.pre_mixin1_norm = MHRMSNorm(hidden_size)
+        self.mixin1 = Mixin(hidden_size, hidden_size)
 
-        self.norm3 = MHRMSNorm(hidden_size)
+        self.pre_mlp_norm = MHRMSNorm(hidden_size)
         self.mlp = MHSwiGLU(hidden_size, hidden_size)
+
+        self.pre_mixin2_norm = MHRMSNorm(hidden_size)
+        self.mixin2 = Mixin(hidden_size, hidden_size)
 
     def forward(
         self,
@@ -252,16 +255,21 @@ class DecoderLayer(nn.Module):
         attn_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         residual = hidden_states
-        hidden_states = self.norm1(hidden_states)
+        hidden_states = self.pre_attention_norm(hidden_states)
         hidden_states, key_value_states = self.attention(
             hidden_states, key_value_states, attn_mask
         )
         residual = residual + hidden_states
-        hidden_states = self.norm2(residual)
-        hidden_states = self.mixin(hidden_states)
+        hidden_states = self.pre_mixin1_norm(residual)
+        hidden_states = self.mixin1(hidden_states)
+
         hidden_states = residual + hidden_states
-        hidden_states = self.norm3(hidden_states)
+        hidden_states = self.pre_mlp_norm(hidden_states)
         hidden_states = self.mlp(hidden_states)
+
+        residual = residual + hidden_states
+        hidden_states = self.pre_mixin2_norm(residual)
+        hidden_states = self.mixin2(hidden_states)
         hidden_states = residual + hidden_states
 
         return hidden_states, key_value_states  # type: ignore

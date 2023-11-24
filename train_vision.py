@@ -123,11 +123,11 @@ def train(
         normalized_targets = TF.normalize(
             targets, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
         )
-        lpips_loss = loss_fn_alex(normalized_outputs, normalized_targets).mean()
+        # lpips_loss = loss_fn_alex(normalized_outputs, normalized_targets).mean()
         l2_loss = F.mse_loss(normalized_outputs, normalized_targets)
-        loss = l2_loss + lpips_loss
+        loss = l2_loss  # + lpips_loss
         pbar.set_description(
-            f"{idx} l2_loss {l2_loss.item():.5f} lpiops_loss: {lpips_loss.item():.5f} lr {sched.get_last_lr()[0]:.4e}"
+            f"{idx} l2_loss {l2_loss.item():.5f}  lr {sched.get_last_lr()[0]:.4e}"
         )
         loss.backward()
         if i % grad_accum == 0:
@@ -138,7 +138,6 @@ def train(
             {
                 "loss": loss,
                 "l2_loss": l2_loss,
-                "lpips_loss": lpips_loss,
                 "lr": sched.get_last_lr()[0],
             },
             i,
