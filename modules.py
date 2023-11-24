@@ -66,7 +66,7 @@ class MHLinear(nn.Module):
         return x
 
 
-class MHLinearMean(nn.Module):
+class MHLinearSoftmax(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -83,7 +83,7 @@ class MHLinearMean(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x = x.view(*x.shape[:-1], -1, self.in_features)
         x = self.linear(x)
-        x = x.mean(-2)
+        x = torch.softmax(x, dim=-2)
         return x
 
 
