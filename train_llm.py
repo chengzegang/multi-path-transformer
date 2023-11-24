@@ -142,7 +142,7 @@ def train(
         "embedding_size": 4096,
         "hidden_size": 512,
         "num_layers": 32,
-        "head_size": 128,
+        "head_size": 64,
     },
     device: str = "cuda",
     dtype: str = "bfloat16",
@@ -326,6 +326,12 @@ if __name__ == "__main__":
         "data_name": "webtext",
         "max_size": 512,
         "grad_accum": 1,
+        "model_config": {
+            "embedding_size": 8192,
+            "hidden_size": 512,
+            "num_layers": 80,
+            "head_size": 64,
+        },
         "ddp": False,
     }
     host = os.uname().nodename
