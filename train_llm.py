@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm  # type: ignore
 from transformers import AutoModelForCausalLM, AutoTokenizer  # type:ignore
-
+import bitsandbytes as bnb
 import wandb
 from llm import LLM
 from torch_datasets import Pile, Sentence, WebData
@@ -153,13 +153,25 @@ def train(
     except Exception as e:
         print(e)
         print("Starting from scratch")
+    model.embed_tokens.from_pretrained(
+        torch.load("models/embedding_tensor.pt"), freeze=True
+    )
     model.enable_gradient_checkpointing()
     model = model.to(device).to(dtype)
-    opt = AdamW(model.parameters(), lr=lr, weight_decay=0, fused=True)
-
+    # opt = AdamW(model.parameters(), lr=lr, weight_decay=0, fused=True)
+    opt = bnb.optim.AdamW8bit(
+        [
+            {"params": model.embed_norm.parameters()},
+            {"params": model.decoder.parameters()},
+            {"params": model.lm_head.parameters()},
+        ],
+        lr=lr,
+        weight_decay=0,
+        optim_bits=8,
+    )
     sched = LambdaLR(opt, partial(expoential_lr, 0.999, 0.01))
     try:
-        opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
+        # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
     except Exception as e:
         print(e)

@@ -18,11 +18,11 @@ cuda.matmul.allow_tf32 = True
 class LLM(nn.Module):
     def __init__(
         self,
-        vocab_size: int,
-        embedding_size: int,
-        hidden_size: int,
-        num_layers: int,
-        head_size: int = 128,
+        vocab_size: int = 32000,
+        embedding_size: int = 8192,
+        hidden_size: int = 512,
+        num_layers: int = 80,
+        head_size: int = 64,
         padding_idx: int = 0,
     ):
         super().__init__()

@@ -38,7 +38,7 @@ def train(db_path: str, cache_dir: str):
             ax.imshow(TF.to_pil_image(outputs[0]))
             ax = plt.subplot(1, 2, 2)
             ax.imshow(TF.to_pil_image(targets[0]))
-            fig.savefig(f"output.png")
+            fig.savefig("output.png")
             plt.close(fig)
 
 
