@@ -325,7 +325,7 @@ if __name__ == "__main__":
         "data_name": "webtext",
         "max_size": 512,
         "grad_accum": 1,
-        "ddp": True,
+        "ddp": False,
     }
     host = os.uname().nodename
     config = None
