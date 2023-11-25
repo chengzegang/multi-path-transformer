@@ -319,11 +319,11 @@ if __name__ == "__main__":
         "batch_size": 2,
         "model_config": {
             "bunch_size": 16,
-            "hidden_size": 512,
-            "num_layers": 80,
-            "head_size": 64,
+            "hidden_size": 1024,
+            "num_layers": 128,
+            "head_size": 128,
         },
-        "ddp": True,
+        "ddp": False,
     }
     local_config = {
         "root": "/home/caleb/data/pile/train/",
