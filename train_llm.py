@@ -166,16 +166,15 @@ def train(
     model = LLM(tokenizer.vocab_size, **model_config)
     tokenizer.save_pretrained(checkpoint_path)
     print(f"total params: {num_params(model)}")
+    step = 0
     try:
         ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
         model.load_state_dict(torch.load(ckpt), strict=False)
+        step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception as e:
         print(e)
         print("Starting from scratch")
-    model.embed_tokens.from_pretrained(
-        torch.load("models/embedding_tensor.pt"), freeze=False
-    )
     model.enable_gradient_checkpointing()
     model = model.to(device).to(dtype)
     opt = None
@@ -197,7 +196,7 @@ def train(
             fused=True,
             betas=(0.9, 0.98),
         )
-    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.999, 1))
+    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.999, 0.1))
     try:
         opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
@@ -227,7 +226,6 @@ def train(
         dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=num_workers
     )
 
-    step = 0
     try:
         log = yaml.full_load(open(os.path.join(checkpoint_path, "log.yaml")))
         step = log["step"]
@@ -326,7 +324,7 @@ if __name__ == "__main__":
         "name": "local",
         "data_name": "webtext",
         "max_size": 512,
-        "grad_accum": 8,
+        "grad_accum": 32,
         "model_config": {
             "embedding_size": 4096,
             "hidden_size": 512,
