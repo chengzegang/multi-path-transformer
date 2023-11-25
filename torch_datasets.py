@@ -23,8 +23,6 @@ class Video(SQLModel, table=True):
     meta: bytes = Field(default=None)
 
 
-engine = create_engine("sqlite:///video.db")
-Video.metadata.create_all(engine)
 
 
 class VideoStream(Iterable):
@@ -35,6 +33,9 @@ class VideoStream(Iterable):
 
     def __iter__(self):
         reader = torchvision.io.VideoReader(self.path, "video")
+        engine = create_engine("sqlite:///video.db")
+        Video.metadata.create_all(engine)
+
         duration = self.metadata["video"]["duration"][0]
         for i in range(int(duration / self.step_size)):
             t = i * self.step_size
@@ -149,7 +150,7 @@ class BilibiliVideoStreams(Iterable):
 class WebData(IterableDataset):
     def __init__(self, **kwargs):
         super().__init__()
-        self.dataset = load_dataset("c4", "en", split="train", streaming=True).shuffle()
+        self.dataset = load_dataset("togethercomputer/RedPajama-Data-V2", 'default', split='train', streaming=True).shuffle()
 
     def __iter__(self):
         for d in self.dataset:

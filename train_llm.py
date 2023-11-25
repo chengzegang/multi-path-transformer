@@ -22,7 +22,7 @@ from torch_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
-
+import typer
 
 def expoential_lr(
     warmup_steps=2000, beta: float = 0.95, min_factor: float = 0.01, step: int = 0

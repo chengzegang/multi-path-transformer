@@ -1,0 +1,11 @@
+name: ai4ce
+data_name: webtext
+max_size: 512
+grad_accum: 32
+model_config:
+  embedding_size: 4096
+  hidden_size: 512
+  num_layers: 32
+  head_size: 64
+ddp: false
+checkpoint: checkpoints/llm-19558400tokens-512context.pt
