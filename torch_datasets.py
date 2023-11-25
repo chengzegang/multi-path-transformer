@@ -23,8 +23,6 @@ class Video(SQLModel, table=True):
     meta: bytes = Field(default=None)
 
 
-
-
 class VideoStream(Iterable):
     def __init__(self, path: str, step_size: float = 1.0):
         self.path = path
@@ -150,11 +148,16 @@ class BilibiliVideoStreams(Iterable):
 class WebData(IterableDataset):
     def __init__(self, **kwargs):
         super().__init__()
-        self.dataset = load_dataset("togethercomputer/RedPajama-Data-V2", 'default', split='train', streaming=True).shuffle()
+        self.dataset = load_dataset(
+            "togethercomputer/RedPajama-Data-V2",
+            "default",
+            split="train",
+            streaming=True,
+        ).shuffle()
 
     def __iter__(self):
         for d in self.dataset:
-            yield d
+            yield {"text": d["raw_content"]}
 
 
 class Pile(IterableDataset):
