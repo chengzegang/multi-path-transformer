@@ -19,7 +19,7 @@ class LLM(nn.Module):
     def __init__(
         self,
         vocab_size: int = 32000,
-        embedding_size: int = 8192,
+        bunch_size: int = 8,
         hidden_size: int = 512,
         num_layers: int = 80,
         head_size: int = 64,
@@ -27,17 +27,18 @@ class LLM(nn.Module):
     ):
         super().__init__()
         self.vocab_size = vocab_size
+        self.bunch_size = bunch_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.head_size = head_size
         self.padding_idx = padding_idx
         self.embed_tokens = nn.Embedding(
-            vocab_size, embedding_size, padding_idx=padding_idx, dtype=torch.bfloat16
+            vocab_size, hidden_size, padding_idx=padding_idx, dtype=torch.bfloat16
         )
-        self.embed_norm = MSNorm(embedding_size)
+        self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, head_size)
-        self.lm_head_norm = MSNorm(embedding_size)
-        self.lm_head = nn.Linear(embedding_size, vocab_size, dtype=torch.bfloat16)
+        self.lm_head_norm = MSNorm(hidden_size)
+        self.lm_head = MPLinear(hidden_size, vocab_size, dtype=torch.bfloat16)
         self.token_seen = 0
 
     def save_to_file(self, path: str):
@@ -85,12 +86,17 @@ class LLM(nn.Module):
         ] = None,
     ):
         input_embeds = self.embed_tokens(input_ids)
+        input_embeds = torch.repeat_interleave(input_embeds, self.bunch_size, dim=-1)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
             input_embeds, key_value_states=past_key_values
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
+        pred_logits = pred_logits.view(
+            pred_logits.shape[0], pred_logits.shape[1], self.bunch_size, self.vocab_size
+        )
+        pred_logits = torch.logsumexp(pred_logits, dim=-2)
         loss = None
         if labels is not None:
             loss = F.cross_entropy(

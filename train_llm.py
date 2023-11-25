@@ -318,7 +318,7 @@ if __name__ == "__main__":
         "grad_accum": 8,
         "batch_size": 2,
         "model_config": {
-            "embedding_size": 8192,
+            "bunch_size": 16,
             "hidden_size": 512,
             "num_layers": 80,
             "head_size": 64,
@@ -332,7 +332,7 @@ if __name__ == "__main__":
         "max_size": 512,
         "grad_accum": 1,
         "model_config": {
-            "embedding_size": 4096,
+            "bunch_size": 8,
             "hidden_size": 512,
             "num_layers": 32,
             "head_size": 64,

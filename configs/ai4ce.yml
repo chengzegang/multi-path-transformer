@@ -3,7 +3,7 @@ data_name: webtext
 max_size: 512
 grad_accum: 32
 model_config:
-  embedding_size: 4096
+  bunch_size: 8
   hidden_size: 512
   num_layers: 32
   head_size: 64
