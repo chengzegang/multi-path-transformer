@@ -149,6 +149,7 @@ def train(
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     ddp: bool = False,
     enable_compiler: bool = False,
+    checkpoint: str | None = "checkpoints/llm-19558400tokens-512context.pt",
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -167,6 +168,10 @@ def train(
     tokenizer.save_pretrained(checkpoint_path)
     print(f"total params: {num_params(model)}")
     step = 0
+    try:
+        model.load_state_dict(torch.load(checkpoint), strict=False)
+    except Exception as e:
+        print(e)
     try:
         ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
