@@ -186,6 +186,7 @@ def train(
             lr=lr,
             weight_decay=1e-1,
             betas=(0.9, 0.98),
+            fused=True,
             parameters_as_bucket_view=True,
         )
     else:
@@ -196,7 +197,7 @@ def train(
             fused=True,
             betas=(0.9, 0.98),
         )
-    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.999, 0.01))
+    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.999, 1))
     try:
         opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
@@ -277,8 +278,8 @@ def train(
             out_text = tokenizer.decode(
                 output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
             )
-            pbar.write(f"IN : {in_text:64s}")
-            pbar.write(f"OUT: {out_text:64s}")
+            pbar.write(f"IN : {in_text[:64]}...")
+            pbar.write(f"OUT: {out_text[:64]}...")
             wandb.log(
                 {
                     "in_text": in_text,
@@ -325,9 +326,9 @@ if __name__ == "__main__":
         "name": "local",
         "data_name": "webtext",
         "max_size": 512,
-        "grad_accum": 1,
+        "grad_accum": 8,
         "model_config": {
-            "embedding_size": 8192,
+            "embedding_size": 4096,
             "hidden_size": 512,
             "num_layers": 32,
             "head_size": 64,

@@ -13,7 +13,7 @@ def stream(model_id: str, query: str):
         "embedding_size": 4096,
         "hidden_size": 512,
         "num_layers": 32,
-        "head_size": 128,
+        "head_size": 64,
     }
     model = LLM(tokenizer.vocab_size, **model_config).to(
         dtype=torch.bfloat16, device="cuda"
