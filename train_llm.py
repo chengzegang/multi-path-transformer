@@ -24,6 +24,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
 import typer
 
+
 def expoential_lr(
     warmup_steps=2000, beta: float = 0.95, min_factor: float = 0.01, step: int = 0
 ):
@@ -77,7 +78,7 @@ def step_model(
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
-            out = optimized_model(**batch, labels=batch.input_ids)
+            out = optimized_model(batch.input_ids, labels=batch.input_ids)
             out["loss"].backward()
             loss = out["loss"].item()
             input_ids = batch["input_ids"]
@@ -329,7 +330,7 @@ if __name__ == "__main__":
         "name": "local",
         "data_name": "webtext",
         "max_size": 512,
-        "grad_accum": 32,
+        "grad_accum": 1,
         "model_config": {
             "embedding_size": 4096,
             "hidden_size": 512,

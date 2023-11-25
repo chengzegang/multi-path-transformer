@@ -30,56 +30,6 @@ class MPLinear(nn.Module):
         return x
 
 
-class Mixin(nn.Module):
-    def __init__(
-        self,
-        in_features: int,
-        out_features: Optional[int] = None,
-        bias=True,
-        dtype=torch.bfloat16,
-        device: Optional[torch.device | str] = None,
-    ):
-        super().__init__()
-        self.in_features = in_features
-        out_features = out_features or in_features
-        self.out_features = out_features
-
-        self.q_proj = nn.Linear(
-            in_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.k_proj = nn.Linear(
-            in_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.v_proj = nn.Linear(
-            in_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.o_proj = nn.Linear(
-            out_features, out_features, bias=bias, dtype=dtype, device=device
-        )
-        self.rotary = RotaryEmbedding(out_features)
-
-    def reset_parameters(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.normal_(p, std=1.0 / math.sqrt(p.shape[1]))
-            else:
-                nn.init.zeros_(p)
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = x.view(*x.shape[:-1], -1, self.in_features)
-
-        x = torch.softmax(x + 1e-6, dim=-2) * x.mean(dim=-2, keepdim=True)
-        q = self.q_proj(x)
-        k = self.k_proj(x)
-        v = self.v_proj(x)
-
-        q, k = self.rotary(q, k)
-        out = F.scaled_dot_product_attention(q, k, v)
-        out = self.o_proj(out)
-        out = out.flatten(-2)
-        return out
-
-
 class MSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
@@ -195,10 +145,11 @@ class RotaryEmbedding(torch.nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, hidden_size: int, head_size: int):
+    def __init__(self, hidden_size: int, head_size: int, orient: str = "outer"):
         super().__init__()
         self.hidden_size = hidden_size
         self.head_size = head_size
+        self.orient = orient
         self.q_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
         self.k_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
         self.v_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
@@ -206,21 +157,31 @@ class Attention(nn.Module):
         self.rotary = RotaryEmbedding(head_size)
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
-        return hidden_states.view(
-            hidden_states.shape[0],
-            hidden_states.shape[1],
-            -1,
-            self.head_size,
-        )
+        if self.orient == "outer":
+            return hidden_states.view(
+                hidden_states.shape[0],
+                hidden_states.shape[1],
+                -1,
+                self.head_size,
+            )
+        else:
+            return hidden_states.view(
+                hidden_states.shape[0],
+                hidden_states.shape[1],
+                -1,
+                self.head_size,
+            ).transpose(1, 2)
 
     def _reshape_scores(self, scores: Tensor) -> Tensor:
-        return scores.contiguous().transpose(1, 2).flatten(-2)
+        if self.orient == "outer":
+            return scores.contiguous().transpose(1, 2).flatten(-2)
+        else:
+            return scores.contiguous().flatten(-2)
 
     def forward(
         self,
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
-        attn_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         q, k, v = None, None, None
         q = self.q_proj(hidden_states)
@@ -240,7 +201,7 @@ class Attention(nn.Module):
             qh.transpose(1, 2),
             kh.transpose(1, 2),
             vh.transpose(1, 2),
-            is_causal=key_value_states is None,
+            is_causal=key_value_states is None and self.orient == "outer",
         )
 
         attn_scores = self._reshape_scores(attn_scores)
@@ -250,37 +211,36 @@ class Attention(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, hidden_size: int, head_size: int, mlp_dim: int):
+    def __init__(self, hidden_size: int, head_size: int):
         super().__init__()
-        self.pre_attention_norm = MSNorm(hidden_size)
-        self.attention = Attention(hidden_size, head_size)
+        self.pre_outer_norm = MSNorm(hidden_size)
+        self.outer_attention = Attention(hidden_size, head_size, orient="outer")
 
-        self.pre_mlp_norm = MSNorm(hidden_size)
-        self.mlp = SwiGLU(hidden_size, mlp_dim)
-
-        self.mixin = Mixin(hidden_size, hidden_size)
+        self.pre_inter_norm = MSNorm(hidden_size)
+        self.inter_attention = Attention(hidden_size, hidden_size, orient="inner")
 
     def forward(
         self,
         hidden_states: Tensor,
-        key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
-        attn_mask: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        key_value_states: Optional[
+            Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]
+        ] = None,
+    ) -> Tuple[Tensor, Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]:
         residual = hidden_states
-        hidden_states = self.pre_attention_norm(residual)
-        hidden_states, key_value_states = self.attention(
-            hidden_states, key_value_states, attn_mask
+        hidden_states = self.pre_outer_norm(residual)
+        hidden_states, inter_key_value_states = self.outer_attention(
+            hidden_states,
+            None if key_value_states is None else key_value_states[0],
         )
 
         residual = residual + hidden_states
-        hidden_states = self.pre_mlp_norm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.pre_inter_norm(residual)
+        hidden_states, outer_key_value_states = self.inter_attention(
+            hidden_states, None
+        )
 
         residual = residual + hidden_states
-        hidden_states = self.mixin(hidden_states)
-
-        residual = residual + hidden_states
-
+        key_value_states = (inter_key_value_states, outer_key_value_states)
         return residual, key_value_states  # type: ignore
 
 
@@ -290,7 +250,6 @@ class Decoder(nn.Module):
         hidden_size: int = 512,
         num_layers: int = 32,
         head_size: int = 128,
-        mlp_dim: int = 1366,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -301,7 +260,6 @@ class Decoder(nn.Module):
                 DecoderLayer(
                     hidden_size=hidden_size,
                     head_size=head_size,
-                    mlp_dim=mlp_dim,
                 )
                 for i in range(num_layers)
             ]
@@ -317,10 +275,13 @@ class Decoder(nn.Module):
     def forward(
         self,
         hidden_states: Tensor,
-        key_value_states: Optional[List[Tuple[Tensor, Tensor]]] = None,
-        attn_mask: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
-        new_key_value_states: List[Tuple[Tensor, Tensor]] = []
+        key_value_states: Optional[
+            List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
+        ] = None,
+    ) -> Tuple[Tensor, List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]]:
+        new_key_value_states: List[
+            Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]
+        ] = []
         if key_value_states is not None:
             for i, layer in enumerate(self.layers):
                 kvs = key_value_states[i]
@@ -329,14 +290,12 @@ class Decoder(nn.Module):
                         layer,
                         hidden_states,
                         kvs,
-                        attn_mask,
                         use_reentrant=True,
                     )
                 else:
                     hidden_states, new_kvs = layer(
                         hidden_states,
                         kvs,
-                        attn_mask,
                     )
                 new_key_value_states.append(new_kvs)
             return hidden_states, new_key_value_states
@@ -347,10 +306,9 @@ class Decoder(nn.Module):
                         layer,
                         hidden_states,
                         None,
-                        attn_mask,
                         use_reentrant=True,
                     )
                 else:
-                    hidden_states, new_kvs = layer(hidden_states, None, attn_mask)
+                    hidden_states, new_kvs = layer(hidden_states, None)
                 new_key_value_states.append(new_kvs)
             return hidden_states, new_key_value_states

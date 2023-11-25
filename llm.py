@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import bitsandbytes as bnb
 import torch
@@ -23,7 +23,6 @@ class LLM(nn.Module):
         hidden_size: int = 512,
         num_layers: int = 80,
         head_size: int = 64,
-        mlp_dim: int = 1366,
         padding_idx: int = 0,
     ):
         super().__init__()
@@ -36,7 +35,7 @@ class LLM(nn.Module):
             vocab_size, embedding_size, padding_idx=padding_idx, dtype=torch.bfloat16
         )
         self.embed_norm = MSNorm(embedding_size)
-        self.decoder = Decoder(hidden_size, num_layers, head_size, mlp_dim)
+        self.decoder = Decoder(hidden_size, num_layers, head_size)
         self.lm_head_norm = MSNorm(embedding_size)
         self.lm_head = nn.Linear(embedding_size, vocab_size, dtype=torch.bfloat16)
         self.token_seen = 0
@@ -71,19 +70,6 @@ class LLM(nn.Module):
         obj.token_seen = token_seen
         return obj
 
-    def build_attention_mask(
-        self, seq_length: int, device: Optional[torch.device] = None
-    ):
-        mask = torch.tril(
-            torch.ones(
-                seq_length,
-                seq_length,
-                dtype=torch.bool,
-                device=device,
-            )
-        )
-        return mask
-
     def decode(
         self, input_embeds: Tensor, attn_mask: Optional[Tensor] = None
     ) -> Tensor:
@@ -94,16 +80,14 @@ class LLM(nn.Module):
         self,
         input_ids: Tensor,
         labels: Optional[Tensor] = None,
-        past_key_values: Optional[Tensor] = None,
-        attention_mask: Optional[Tensor] = None,
+        past_key_values: Optional[
+            List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
+        ] = None,
     ):
-        attn_mask = self.build_attention_mask(
-            input_ids.shape[1], device=input_ids.device
-        )
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
-            input_embeds, attn_mask=attn_mask, key_value_states=past_key_values
+            input_embeds, key_value_states=past_key_values
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)

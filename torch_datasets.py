@@ -150,10 +150,13 @@ class WebData(IterableDataset):
         super().__init__()
         self.dataset = load_dataset(
             "togethercomputer/RedPajama-Data-V2",
-            "default",
+            name="default",
+            partition="head_middle",
+            snapshots=["2023-06", "2022-49"],
+            languages=["en", "de", "it", "fr", "es"],
             split="train",
             streaming=True,
-        ).shuffle()
+        )
 
     def __iter__(self):
         for d in self.dataset:
