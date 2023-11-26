@@ -213,7 +213,7 @@ def train(
             AdamW,
             lr=lr,
             weight_decay=1e-5,
-            betas=(0.6, 0.96),
+            betas=(0.9, 0.96),
             fused=True,
             parameters_as_bucket_view=True,
         )
@@ -223,7 +223,7 @@ def train(
             lr=lr,
             weight_decay=1e-5,
             fused=True,
-            betas=(0.6, 0.96),
+            betas=(0.9, 0.96),
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, step, warmup_steps, 0.9999, 0.1))
@@ -325,8 +325,6 @@ def train(
                     )
                 model.eval()
                 torch.save(model.state_dict(), f"models/llm-{step}.pt")
-                torch.save(opt.state_dict(), "models/opt.pt")
-                torch.save(sched.state_dict(), "models/sched.pt")
 
     pbar.close()
 
