@@ -35,7 +35,7 @@ def expoential_lr(
     step: int = 0,
 ):
     if step < initial_step + warmup_steps:
-        return step / warmup_steps
+        return step / (initial_step + warmup_steps)
     else:
         return max(beta ** (step - warmup_steps - initial_step), min_factor)
 
@@ -355,6 +355,7 @@ if __name__ == "__main__":
         "data_name": "webtext",
         "max_size": 512,
         "grad_accum": 100,
+        "save_every": 10,
         "batch_size": 4,
         "model_config": {
             "bunch_size": 8,
@@ -363,6 +364,7 @@ if __name__ == "__main__":
             "head_size": 64,
         },
         "ddp": False,
+        "warmup_steps": 0,
     }
     host = os.uname().nodename
     config = None
