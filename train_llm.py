@@ -80,7 +80,7 @@ def step_model(
         for i, batch in enumerate(dl):
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
-            out["loss"].backward()
+            (out["loss"] / grad_accum).backward()
             loss = out["loss"].item()
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
