@@ -153,6 +153,7 @@ class Attention(nn.Module):
         self.q_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
         self.k_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
         self.v_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
+        self.w_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
         self.out_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
         self.rotary = RotaryEmbedding(head_size)
 
@@ -172,6 +173,8 @@ class Attention(nn.Module):
                 self.head_size,
             ).transpose(1, 2)
 
+
+
     def _reshape_scores(self, scores: Tensor) -> Tensor:
         if self.orient == "outer":
             return scores.contiguous().transpose(1, 2).flatten(-2)
@@ -183,10 +186,12 @@ class Attention(nn.Module):
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
-        q, k, v = None, None, None
+        q, k, v, w = None, None, None, None
+
         q = self.q_proj(hidden_states)
         k = self.k_proj(hidden_states)
         v = self.v_proj(hidden_states)
+        w = self.w_proj(hidden_states)
         if key_value_states is not None:
             k_cache, v_cache = key_value_states
             k = torch.cat([k_cache, k], dim=1)
@@ -205,7 +210,8 @@ class Attention(nn.Module):
         )
 
         attn_scores = self._reshape_scores(attn_scores)
-        out = self.out_proj(attn_scores)
+
+        out = self.out_proj(F.sigmoid(w) * attn_scores)
 
         return out, (k, v)
 
