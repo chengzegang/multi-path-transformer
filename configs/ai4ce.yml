@@ -1,7 +1,7 @@
 name: ai4ce
 data_name: webtext
 max_size: 512
-grad_accum: 32
+grad_accum: 1
 model_config:
   bunch_size: 8
   hidden_size: 512
