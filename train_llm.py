@@ -92,7 +92,7 @@ def step_model(
                 f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}"
             )
             pbar.update()
-            if i % grad_accum == 0:
+            if i % grad_accum == 0 and i > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), 10.0)
                 opt.step()
                 sched.step()
