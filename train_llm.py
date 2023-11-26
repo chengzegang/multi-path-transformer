@@ -88,6 +88,7 @@ def step_model(
             static_graph=True,
         )
     first_descend_stage_ended = False
+    wandb.watch(model)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
@@ -261,9 +262,10 @@ def train(
     wandb.init(
         # set the wandb project where this run will be logged
         project="llm",
-        name=f"llm-{hostname}-{date}",
+        name=f"llm-{hostname}",
         # track hyperparameters and run metadata
         id=f"llm-{hostname}-{date}",
+        resume="allow",
         config={
             "grad_accum": grad_accum,
             "dtype": dtype,
