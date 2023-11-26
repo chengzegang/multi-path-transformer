@@ -2,6 +2,7 @@ import asyncio
 import glob
 import json
 import os
+import random
 from typing import Iterable
 
 import aiofiles
@@ -14,7 +15,7 @@ import torchvision
 from datasets import load_dataset
 import datasets as ds
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from torch.utils.data import IterableDataset
+from torch.utils.data import IterableDataset, IterDataPipe
 from transformers import AutoTokenizer
 import torch.utils.data.datapipes as dp
 
@@ -155,6 +156,14 @@ class WebData(IterableDataset):
 
     def __init__(self, **kwargs):
         super().__init__()
+
+    @staticmethod
+    def split_classifier(n):
+        return random.randint(0, 4)
+
+    def load_dataset(self):
+        # info = get_worker_info()
+
         cc = load_dataset(
             "togethercomputer/RedPajama-Data-V2",
             name="default",
@@ -164,30 +173,46 @@ class WebData(IterableDataset):
             split="train",
             streaming=True,
         ).map(self._raw_content_to_text)
+        ccs = (
+            dp.iter.IterableWrapper(cc)
+            .shuffle()
+            .sharding_filter()
+            .demux(5, classifier_fn=self.split_classifier)
+        )
         en_wiki = load_dataset(
             "graelo/wikipedia", "20230601.en", split="train", streaming=True
         )
+        en_wiki = dp.iter.IterableWrapper(en_wiki).shuffle().sharding_filter()
         zh_wiki = load_dataset(
             "graelo/wikipedia", "20230601.zh", split="train", streaming=True
         )
+        zh_wiki = dp.iter.IterableWrapper(zh_wiki).shuffle().sharding_filter()
         zh_cc = load_dataset("uonlp/CulturaX", "zh", split="train", streaming=True)
+        zh_cc = dp.iter.IterableWrapper(zh_cc).shuffle().sharding_filter()
         ja_wiki = load_dataset(
             "graelo/wikipedia", "20230601.ja", split="train", streaming=True
         )
+        ja_wiki = dp.iter.IterableWrapper(ja_wiki).shuffle().sharding_filter()
         ja_cc = load_dataset("uonlp/CulturaX", "ja", split="train", streaming=True)
-        self.dataset = ds.combine.interleave_datasets(
-            [cc, en_wiki, zh_cc, zh_wiki, ja_cc, ja_wiki],
-            [0.45, 0.05, 0.125, 0.125, 0.125, 0.125],
-            stopping_strategy="all_exhausted",
+        ja_cc = dp.iter.IterableWrapper(ja_cc).shuffle().sharding_filter()
+        dataset = dp.iter.Multiplexer(
+            *ccs,
+            en_wiki,
+            zh_cc,
+            zh_wiki,
+            ja_cc,
+            ja_wiki,
+            # [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
+            # stopping_strategy="all_exhausted",
         )
-        self.dataset = self.dataset.shuffle()
+        return dataset
 
     def __iter__(self):
-        for d in self.dataset:
+        for d in self.load_dataset():
             yield {"text": d["text"]}
 
 
-class Pile(IterableDataset):
+class Pile_(IterableDataset):
     def __init__(self, root: str):
         super().__init__()
         self.root = root
@@ -198,6 +223,16 @@ class Pile(IterableDataset):
             with jl.open(path) as file:
                 for line in file:
                     yield line
+
+
+class Pile(IterDataPipe):
+    def __init__(self, root: str):
+        super().__init__()
+        self.data = dp.iter.IterableWrapper(Pile_(root)).shuffle().sharding_filter()
+
+    def __iter__(self):
+        for d in self.data:
+            yield {"text": d["text"]}
 
 
 class Sentence(IterableDataset):

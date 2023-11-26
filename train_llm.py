@@ -57,6 +57,12 @@ def save_checkpoint(
     yaml.dump({"step": step}, open(os.path.join(checkpoint_path, "log.yaml"), "w"))
 
 
+def reset_nan_grad(model: nn.Module):
+    for p in model.parameters():
+        if torch.isnan(p.grad).any():
+            p.grad = torch.where(torch.isnan(p.grad), 0, p.grad)
+
+
 def step_model(
     device: str,
     dl: DataLoader,
@@ -81,13 +87,13 @@ def step_model(
             gradient_as_bucket_view=True,
             static_graph=True,
         )
-    scaler = GradScaler()
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
-            with torch.autocast("cuda", torch.bfloat16):
-                out = optimized_model(batch.input_ids, labels=batch.input_ids)
-            scaler.scale(out["loss"] / grad_accum).backward()
+            out = optimized_model(batch.input_ids, labels=batch.input_ids)
+            with torch.autocast("cuda", torch.float32):
+                (out["loss"] / grad_accum).backward()
+            reset_nan_grad(model)
             loss = out["loss"].item()
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
@@ -96,12 +102,12 @@ def step_model(
             )
             pbar.update()
             if i % grad_accum == 0 and i > 0:
-                scaler.unscale_(opt)
-                nn.utils.clip_grad_norm_(model.parameters(), 10.0)
-                scaler.step(opt)
-                sched.step()
-                opt.zero_grad()
-                scaler.update()
+                with torch.autocast("cuda", torch.float32):
+                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    sched.step()
+                    opt.step()
+                    opt.zero_grad()
+
                 step += 1
                 yield epoch, step, loss, input_ids, output_ids
 
@@ -199,7 +205,7 @@ def train(
             AdamW,
             lr=lr,
             weight_decay=1e-5,
-            betas=(0.8, 0.98),
+            betas=(0.6, 0.96),
             fused=True,
             parameters_as_bucket_view=True,
         )
@@ -209,7 +215,7 @@ def train(
             lr=lr,
             weight_decay=1e-5,
             fused=True,
-            betas=(0.8, 0.98),
+            betas=(0.6, 0.96),
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, step, warmup_steps, 0.9999, 0.1))
@@ -220,7 +226,7 @@ def train(
         print(e)
     data = None
     if data_name == "pile":
-        data = dp.iter.IterableWrapper(Pile(root)).shuffle().sharding_filter()
+        data = Pile(root)
     elif data_name == "webtext":
         data = WebData()
     dataset = Sentence(data, max_size=max_size, tokenizer=tokenizer)
