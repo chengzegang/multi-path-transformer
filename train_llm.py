@@ -317,7 +317,7 @@ if __name__ == "__main__":
         "name": "greene",
         "data_name": "pile",
         "max_size": 4096,
-        "grad_accum": 32,
+        "grad_accum": 100,
         "save_every": 10,
         "batch_size": 1,
         "model_config": {
