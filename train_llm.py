@@ -1,3 +1,4 @@
+from datetime import datetime
 import glob
 import inspect
 import math
@@ -99,9 +100,7 @@ def step_model(
 def optimize_model(model: LLM, enabled: bool = True) -> nn.Module:
     proxy_model = model
     if enabled:
-        proxy_model = torch.compile(
-            model, fullgraph=True, dynamic=True, mode="max-autotune"
-        )
+        proxy_model = torch.compile(model, mode="reduce-overhead")
     # proxy_model = mesh_model(model)
     # proxy_model = model
     return proxy_model
@@ -132,7 +131,7 @@ def train(
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
-    lr: float =1e-3,
+    lr: float = 1e-3,
     num_epochs: int = 10,
     save_every: int = 100,
     grad_accum: int = 2,
@@ -150,7 +149,7 @@ def train(
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     ddp: bool = False,
     enable_compiler: bool = False,
-    checkpoint: Optional[str] = "checkpoints/llm-19558400tokens-512context.pt",
+    checkpoint: Optional[str] = "checkpoints/llm-21000.pt",
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -204,7 +203,7 @@ def train(
         )
     sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.9999, 0.1))
     try:
-        #opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
+        # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
     except Exception as e:
         print(e)
@@ -238,12 +237,13 @@ def train(
     except Exception as e:
         print(e)
     hostname = os.uname().nodename
+    date = datetime.now().strftime("%Y%m%d-%H%M%S")
     wandb.init(
         # set the wandb project where this run will be logged
         project="llm",
-        name=f"llm-{hostname}",
+        name=f"llm-{hostname}-{date}",
         # track hyperparameters and run metadata
-        id=f"llm-{hostname}",
+        id=f"llm-{hostname}-{date}",
         config={
             "grad_accum": grad_accum,
             "dtype": dtype,
@@ -310,9 +310,9 @@ def train(
 
 
 if __name__ == "__main__":
+    import torch._dynamo.config  # type: ignore
 
-    import torch.multiprocessing as mp
-    mp.set_start_method('spawn')
+    os.environ["TORCHDYNAMO_VERBOSE"] = "1"
     greene_config = {
         "root": "/scratch/work/public/ml-datasets/pile/train/",
         "name": "greene",
@@ -335,6 +335,7 @@ if __name__ == "__main__":
         "data_name": "webtext",
         "max_size": 512,
         "grad_accum": 8,
+        "batch_size": 4,
         "model_config": {
             "bunch_size": 8,
             "hidden_size": 512,

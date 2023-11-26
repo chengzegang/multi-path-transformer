@@ -173,8 +173,6 @@ class Attention(nn.Module):
                 self.head_size,
             ).transpose(1, 2)
 
-
-
     def _reshape_scores(self, scores: Tensor) -> Tensor:
         if self.orient == "outer":
             return scores.contiguous().transpose(1, 2).flatten(-2)

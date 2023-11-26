@@ -18,6 +18,7 @@ from torch.utils.data import IterableDataset
 from transformers import AutoTokenizer
 import torch.utils.data.datapipes as dp
 
+
 class Video(SQLModel, table=True):
     id: int = Field(primary_key=True, default=None)
     url: str = Field(default=None, index=True)
@@ -149,7 +150,7 @@ class BilibiliVideoStreams(Iterable):
 class WebData(IterableDataset):
     @staticmethod
     def _raw_content_to_text(data: dict):
-        data['text'] = data['raw_content']
+        data["text"] = data["raw_content"]
         return data
 
     def __init__(self, **kwargs):
@@ -163,12 +164,22 @@ class WebData(IterableDataset):
             split="train",
             streaming=True,
         ).map(self._raw_content_to_text)
-        en_wiki = load_dataset("graelo/wikipedia", "20230601.en", split='train', streaming=True)
-        zh_wiki = load_dataset("graelo/wikipedia", "20230601.zh", split='train', streaming=True)
-        zh_cc = load_dataset("uonlp/CulturaX", 'zh', split='train', streaming=True)
-        ja_wiki = load_dataset("graelo/wikipedia", "20230601.ja", split='train', streaming=True)
-        ja_cc = load_dataset("uonlp/CulturaX", 'ja', split='train', streaming=True)
-        self.dataset = ds.combine.interleave_datasets([cc, en_wiki, zh_cc, zh_wiki, ja_cc, ja_wiki], [0.45, 0.05, 0.125, 0.125, 0.125, 0.125], stopping_strategy='all_exhausted')
+        en_wiki = load_dataset(
+            "graelo/wikipedia", "20230601.en", split="train", streaming=True
+        )
+        zh_wiki = load_dataset(
+            "graelo/wikipedia", "20230601.zh", split="train", streaming=True
+        )
+        zh_cc = load_dataset("uonlp/CulturaX", "zh", split="train", streaming=True)
+        ja_wiki = load_dataset(
+            "graelo/wikipedia", "20230601.ja", split="train", streaming=True
+        )
+        ja_cc = load_dataset("uonlp/CulturaX", "ja", split="train", streaming=True)
+        self.dataset = ds.combine.interleave_datasets(
+            [cc, en_wiki, zh_cc, zh_wiki, ja_cc, ja_wiki],
+            [0.45, 0.05, 0.125, 0.125, 0.125, 0.125],
+            stopping_strategy="all_exhausted",
+        )
         self.dataset = self.dataset.shuffle()
 
     def __iter__(self):
