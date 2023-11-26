@@ -87,14 +87,19 @@ def step_model(
             gradient_as_bucket_view=True,
             static_graph=True,
         )
+    first_descend_stage_ended = False
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
-            with torch.autocast("cuda", torch.float32):
+            with torch.autocast(
+                "cuda", torch.float32, enabled=first_descend_stage_ended
+            ):
                 (out["loss"] / grad_accum).backward()
             reset_nan_grad(model)
             loss = out["loss"].item()
+            if not first_descend_stage_ended and loss < 5.0:
+                first_descend_stage_ended = True
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
             pbar.set_description(
@@ -102,7 +107,9 @@ def step_model(
             )
             pbar.update()
             if i % grad_accum == 0 and i > 0:
-                with torch.autocast("cuda", torch.float32):
+                with torch.autocast(
+                    "cuda", torch.float32, enabled=first_descend_stage_ended
+                ):
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     sched.step()
                     opt.step()
@@ -146,7 +153,7 @@ def train(
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
-    lr: float = 1e-3,
+    lr: float = 1e-4,
     num_epochs: int = 10,
     save_every: int = 100,
     grad_accum: int = 2,
@@ -219,11 +226,7 @@ def train(
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, step, warmup_steps, 0.9999, 0.1))
-    try:
-        # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
-        sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
-    except Exception as e:
-        print(e)
+    sched.step(step)
     data = None
     if data_name == "pile":
         data = Pile(root)
