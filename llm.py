@@ -82,8 +82,6 @@ class LLM(nn.Module):
                 pred_logits[:, :-1].flatten(0, 1),
                 labels[:, 1:].reshape(-1),
             )
-        if self.training:
-            self.token_seen += input_ids.numel()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):

@@ -4,7 +4,7 @@ import math
 import os
 from functools import partial
 from typing import Optional, Tuple
-
+import torch.utils.data.datapipes as dp
 import bitsandbytes as bnb
 import torch
 import yaml
@@ -210,7 +210,7 @@ def train(
         print(e)
     data = None
     if data_name == "pile":
-        data = Pile(root)
+        data = dp.iter.IterableWrapper(Pile(root)).shuffle().sharding_filter()
     elif data_name == "webtext":
         data = WebData()
     dataset = Sentence(data, max_size=max_size, tokenizer=tokenizer)
