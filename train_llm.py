@@ -37,7 +37,7 @@ def expoential_lr(
     if step < initial_step + warmup_steps:
         return step / warmup_steps
     else:
-        return max(beta ** (step - warmup_steps), min_factor)
+        return max(beta ** (step - warmup_steps - initial_step), min_factor)
 
 
 def save_checkpoint(
