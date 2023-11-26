@@ -24,6 +24,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
 import typer
+from torch.cuda.amp import GradScaler
 
 
 def expoential_lr(
@@ -80,11 +81,13 @@ def step_model(
             gradient_as_bucket_view=True,
             static_graph=True,
         )
+    scaler = GradScaler()
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
-            out = optimized_model(batch.input_ids, labels=batch.input_ids)
-            (out["loss"] / grad_accum).backward()
+            with torch.autocast("cuda", torch.bfloat16):
+                out = optimized_model(batch.input_ids, labels=batch.input_ids)
+            scaler.scale(out["loss"] / grad_accum).backward()
             loss = out["loss"].item()
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
@@ -93,10 +96,12 @@ def step_model(
             )
             pbar.update()
             if i % grad_accum == 0 and i > 0:
+                scaler.unscale_(opt)
                 nn.utils.clip_grad_norm_(model.parameters(), 10.0)
-                opt.step()
+                scaler.step(opt)
                 sched.step()
                 opt.zero_grad()
+                scaler.update()
                 step += 1
                 yield epoch, step, loss, input_ids, output_ids
 
