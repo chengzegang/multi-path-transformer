@@ -311,8 +311,6 @@ def train(
 
 if __name__ == "__main__":
 
-    import torch.multiprocessing as mp
-    mp.set_start_method('spawn')
     greene_config = {
         "root": "/scratch/work/public/ml-datasets/pile/train/",
         "name": "greene",
