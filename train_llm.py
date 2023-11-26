@@ -150,6 +150,7 @@ def train(
     ddp: bool = False,
     enable_compiler: bool = False,
     checkpoint: Optional[str] = "checkpoints/llm-21000.pt",
+    warmup_steps: int = 2000,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -201,7 +202,7 @@ def train(
             fused=True,
             betas=(0.8, 0.98),
         )
-    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.9999, 0.1))
+    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.9999, 0.1))
     try:
         # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
@@ -326,6 +327,7 @@ if __name__ == "__main__":
             "num_layers": 80,
             "head_size": 128,
         },
+        "warmup_steps": 0,
         "ddp": False,
     }
     local_config = {
