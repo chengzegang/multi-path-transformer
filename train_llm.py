@@ -3,8 +3,8 @@ import inspect
 import math
 import os
 from functools import partial
-from typing import Tuple
-
+from typing import Optional, Tuple
+import torch.utils.data.datapipes as dp
 import bitsandbytes as bnb
 import torch
 import yaml
@@ -128,7 +128,7 @@ def num_params(model: nn.Module) -> str:
 
 
 def train(
-    root: str | None = None,
+    root: Optional[str] = None,
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
@@ -150,7 +150,7 @@ def train(
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     ddp: bool = False,
     enable_compiler: bool = False,
-    checkpoint: str | None = "checkpoints/llm-19558400tokens-512context.pt",
+    checkpoint: Optional[str] = "checkpoints/llm-19558400tokens-512context.pt",
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -210,7 +210,7 @@ def train(
         print(e)
     data = None
     if data_name == "pile":
-        data = Pile(root)
+        data = dp.iter.IterableWrapper(Pile(root)).shuffle().sharding_filter()
     elif data_name == "webtext":
         data = WebData()
     dataset = Sentence(data, max_size=max_size, tokenizer=tokenizer)
@@ -318,12 +318,13 @@ if __name__ == "__main__":
         "name": "greene",
         "data_name": "pile",
         "max_size": 4096,
-        "grad_accum": 1,
+        "grad_accum": 32,
+        "save_every": 10,
         "batch_size": 1,
         "model_config": {
             "bunch_size": 8,
             "hidden_size": 1024,
-            "num_layers": 96,
+            "num_layers": 80,
             "head_size": 128,
         },
         "ddp": False,
