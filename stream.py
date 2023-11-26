@@ -10,7 +10,7 @@ import glob
 def stream(model_id: str, query: str):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model_config: dict = {
-        "embedding_size": 4096,
+        "bunch_size": 8,
         "hidden_size": 512,
         "num_layers": 32,
         "head_size": 64,
@@ -48,7 +48,7 @@ def stream(model_id: str, query: str):
 
 for t in stream(
     "meta-llama/Llama-2-7b-chat-hf",
-    "A happy life",
+    "你好",
 ):
     print(t + " ", end="", flush=True)
 

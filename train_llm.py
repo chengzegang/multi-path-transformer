@@ -27,9 +27,13 @@ import typer
 
 
 def expoential_lr(
-    warmup_steps=2000, beta: float = 0.95, min_factor: float = 0.01, step: int = 0
+    initial_step: int = 0,
+    warmup_steps=2000,
+    beta: float = 0.95,
+    min_factor: float = 0.01,
+    step: int = 0,
 ):
-    if step < warmup_steps:
+    if step < initial_step + warmup_steps:
         return step / warmup_steps
     else:
         return max(beta ** (step - warmup_steps), min_factor)
@@ -201,7 +205,7 @@ def train(
             fused=True,
             betas=(0.8, 0.98),
         )
-    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.9999, 0.1))
+    sched = LambdaLR(opt, partial(expoential_lr, step, 1000, 0.9999, 0.1))
     try:
         # opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
@@ -333,7 +337,7 @@ if __name__ == "__main__":
         "name": "local",
         "data_name": "webtext",
         "max_size": 512,
-        "grad_accum": 8,
+        "grad_accum": 100,
         "batch_size": 4,
         "model_config": {
             "bunch_size": 8,
