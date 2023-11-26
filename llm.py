@@ -8,9 +8,11 @@ from torch import Tensor, nn  # type: ignore
 from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
-
+import matplotlib.pyplot as plt
 from modules import Decoder, MSNorm, MPLinear
+import matplotlib
 
+matplotlib.use("Agg")
 cudnn.benchmark = True
 cuda.matmul.allow_tf32 = True
 
@@ -33,7 +35,10 @@ class LLM(nn.Module):
         self.head_size = head_size
         self.padding_idx = padding_idx
         self.embed_tokens = nn.Embedding(
-            vocab_size, hidden_size, padding_idx=padding_idx, dtype=torch.bfloat16
+            vocab_size,
+            hidden_size * bunch_size,
+            padding_idx=padding_idx,
+            dtype=torch.bfloat16,
         )
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, head_size)
@@ -86,7 +91,6 @@ class LLM(nn.Module):
         ] = None,
     ):
         input_embeds = self.embed_tokens(input_ids)
-        input_embeds = torch.repeat_interleave(input_embeds, self.bunch_size, dim=-1)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
             input_embeds, key_value_states=past_key_values
