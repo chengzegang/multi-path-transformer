@@ -88,7 +88,7 @@ def step_model(
             )
             pbar.update()
             if i % grad_accum == 0:
-                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                nn.utils.clip_grad_norm_(model.parameters(), 10.0)
                 opt.step()
                 sched.step()
                 opt.zero_grad()
@@ -132,10 +132,10 @@ def train(
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
-    lr: float = 0.0005,
+    lr: float =1e-3,
     num_epochs: int = 10,
     save_every: int = 100,
-    grad_accum: int = 32,
+    grad_accum: int = 2,
     max_size: int = 512,
     batch_size: int = 8,
     num_workers: int = 16,
@@ -189,8 +189,8 @@ def train(
             model.parameters(),
             AdamW,
             lr=lr,
-            weight_decay=1e-1,
-            betas=(0.9, 0.98),
+            weight_decay=1e-5,
+            betas=(0.8, 0.98),
             fused=True,
             parameters_as_bucket_view=True,
         )
@@ -198,13 +198,13 @@ def train(
         opt = AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=1e-1,
+            weight_decay=1e-5,
             fused=True,
-            betas=(0.9, 0.98),
+            betas=(0.8, 0.98),
         )
-    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.999, 0.1))
+    sched = LambdaLR(opt, partial(expoential_lr, 1000, 0.9999, 0.1))
     try:
-        opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
+        #opt.load_state_dict(torch.load(os.path.join(checkpoint_path, "opt.pt")))
         sched.load_state_dict(torch.load(os.path.join(checkpoint_path, "sched.pt")))
     except Exception as e:
         print(e)
@@ -282,8 +282,8 @@ def train(
             out_text = tokenizer.decode(
                 output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
             )
-            pbar.write(f"IN : {in_text[:64]}...")
-            pbar.write(f"OUT: {out_text[:64]}...")
+            pbar.write(f"IN : {in_text[:256]}...")
+            pbar.write(f"OUT: {out_text[:256]}...")
             wandb.log(
                 {
                     "in_text": in_text,
@@ -310,6 +310,9 @@ def train(
 
 
 if __name__ == "__main__":
+
+    import torch.multiprocessing as mp
+    mp.set_start_method('spawn')
     greene_config = {
         "root": "/scratch/work/public/ml-datasets/pile/train/",
         "name": "greene",
@@ -330,7 +333,7 @@ if __name__ == "__main__":
         "name": "local",
         "data_name": "webtext",
         "max_size": 512,
-        "grad_accum": 1,
+        "grad_accum": 8,
         "model_config": {
             "bunch_size": 8,
             "hidden_size": 512,
