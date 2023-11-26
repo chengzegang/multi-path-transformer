@@ -3,7 +3,7 @@ import inspect
 import math
 import os
 from functools import partial
-from typing import Tuple
+from typing import Optional, Tuple
 
 import bitsandbytes as bnb
 import torch
@@ -128,7 +128,7 @@ def num_params(model: nn.Module) -> str:
 
 
 def train(
-    root: str | None = None,
+    root: Optional[str] = None,
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
@@ -150,7 +150,7 @@ def train(
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     ddp: bool = False,
     enable_compiler: bool = False,
-    checkpoint: str | None = "checkpoints/llm-19558400tokens-512context.pt",
+    checkpoint: Optional[str] = "checkpoints/llm-19558400tokens-512context.pt",
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -316,6 +316,7 @@ if __name__ == "__main__":
         "data_name": "pile",
         "max_size": 4096,
         "grad_accum": 32,
+        "save_every": 10,
         "batch_size": 1,
         "model_config": {
             "bunch_size": 8,
