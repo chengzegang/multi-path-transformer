@@ -321,7 +321,7 @@ if __name__ == "__main__":
         "model_config": {
             "bunch_size": 8,
             "hidden_size": 1024,
-            "num_layers": 96,
+            "num_layers": 80,
             "head_size": 128,
         },
         "ddp": False,

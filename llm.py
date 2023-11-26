@@ -44,37 +44,12 @@ class LLM(nn.Module):
         self.decoder = Decoder(hidden_size, num_layers, head_size)
         self.lm_head_norm = MSNorm(hidden_size)
         self.lm_head = MPLinear(hidden_size, vocab_size, dtype=torch.bfloat16)
-        self.token_seen = 0
-
-    def save_to_file(self, path: str):
-        state_dict = self.state_dict()
-        snapshot = {
-            "state_dict": state_dict,
-            "model_config": {
-                "vocab_size": self.vocab_size,
-                "hidden_size": self.hidden_size,
-                "num_layers": self.num_layers,
-                "head_size": self.head_size,
-                "padding_idx": self.padding_idx,
-                "token_seen": self.token_seen,
-            },
-        }
-        torch.save(snapshot, path)
 
     def enable_gradient_checkpointing(self):
         self.decoder.enable_gradient_checkpointing()
 
     def disable_gradient_checkpointing(self):
         self.decoder.disable_gradient_checkpointing()
-
-    @classmethod
-    def load_from_file(cls, path: str):
-        snapshot = torch.load(path, mmap=True, map_location="cpu")
-        token_seen = snapshot["model_config"].pop("token_seen", 0)
-        obj = cls(**snapshot["model_config"])
-        obj.load_state_dict(snapshot["state_dict"])
-        obj.token_seen = token_seen
-        return obj
 
     def decode(
         self, input_embeds: Tensor, attn_mask: Optional[Tensor] = None
