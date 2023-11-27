@@ -91,7 +91,7 @@ def step_model(
     wandb.watch(model)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
-            curr_grad_accum = min(grad_accum, step // 1000 + 1)
+            curr_grad_accum = min(grad_accum, step // 100 + 1)
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
             with torch.autocast(
@@ -214,7 +214,7 @@ def train(
             AdamW,
             lr=lr,
             weight_decay=1e-5,
-            betas=(0.9, 0.96),
+            betas=(0.9, 0.999),
             fused=True,
             parameters_as_bucket_view=True,
         )
@@ -224,7 +224,7 @@ def train(
             lr=lr,
             weight_decay=1e-5,
             fused=True,
-            betas=(0.9, 0.96),
+            betas=(0.9, 0.999),
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, step, warmup_steps, 0.9999, 0.1))
