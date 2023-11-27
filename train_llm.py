@@ -83,10 +83,6 @@ def save_checkpoint(
     yaml.dump({"step": step}, open(os.path.join(checkpoint_path, "log.yaml"), "w"))
 
 
-def reset_nan_grad(model: nn.Module):
-    for p in model.parameters():
-        if torch.isnan(p.grad).any():
-            p.grad = torch.where(torch.isnan(p.grad), 0, p.grad)
 
 
 def step_model(
@@ -127,7 +123,6 @@ def step_model(
                 "cuda", torch.float32, enabled=first_descend_stage_ended
             ):
                 (out["loss"] / grad_accum).backward()
-            reset_nan_grad(model)
             loss = out["loss"].item()
             if not first_descend_stage_ended and loss < 4.0:
                 first_descend_stage_ended = True

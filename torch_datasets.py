@@ -14,7 +14,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 from torch.utils.data import IterableDataset, IterDataPipe
 from transformers import AutoTokenizer
 import torch.utils.data.datapipes as dp
-
+import datasets as ds
 
 class Video(SQLModel, table=True):
     id: int = Field(primary_key=True, default=None)
@@ -169,38 +169,33 @@ class WebData(IterableDataset):
             split="train",
             streaming=True,
         ).map(self._raw_content_to_text)
-        ccs = (
-            dp.iter.IterableWrapper(cc)
-            .shuffle()
-            .sharding_filter()
-            .demux(5, classifier_fn=self.split_classifier)
-        )
         en_wiki = load_dataset(
             "graelo/wikipedia", "20230601.en", split="train", streaming=True
         )
-        en_wiki = dp.iter.IterableWrapper(en_wiki).shuffle().sharding_filter()
+        
         zh_wiki = load_dataset(
             "graelo/wikipedia", "20230601.zh", split="train", streaming=True
         )
-        zh_wiki = dp.iter.IterableWrapper(zh_wiki).shuffle().sharding_filter()
+        
         zh_cc = load_dataset("uonlp/CulturaX", "zh", split="train", streaming=True)
-        zh_cc = dp.iter.IterableWrapper(zh_cc).shuffle().sharding_filter()
+        
         ja_wiki = load_dataset(
             "graelo/wikipedia", "20230601.ja", split="train", streaming=True
         )
-        ja_wiki = dp.iter.IterableWrapper(ja_wiki).shuffle().sharding_filter()
+       
         ja_cc = load_dataset("uonlp/CulturaX", "ja", split="train", streaming=True)
-        ja_cc = dp.iter.IterableWrapper(ja_cc).shuffle().sharding_filter()
-        dataset = dp.iter.Multiplexer(
-            *ccs,
+        
+        dataset = ds.interleave_datasets(
+            cc,
             en_wiki,
             zh_cc,
             zh_wiki,
             ja_cc,
             ja_wiki,
-            # [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
-            # stopping_strategy="all_exhausted",
-        )
+            [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
+            stopping_strategy="all_exhausted",
+        ).shuffle()
+        dataset = dp.iter.IterableWrapper(dataset).shuffle().sharding_filter()
         return dataset
 
     def __iter__(self):
