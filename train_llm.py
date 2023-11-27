@@ -381,13 +381,13 @@ if __name__ == "__main__":
         "name": "greene",
         "data_name": "pile",
         "max_size": 4096,
-        "grad_accum": 100,
+        "grad_accum": 32,
         "save_every": 10,
         "batch_size": 1,
         "model_config": DAVID_500M,
         "warmup_steps": 100,
         "ddp": False,
-        "lr": 3e-4,
+        "lr": 2e-4,
     }
 
     local_config = {
