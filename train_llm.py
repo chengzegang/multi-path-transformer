@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from datetime import datetime
 import glob
 import inspect
@@ -168,6 +169,14 @@ def num_params(model: nn.Module) -> str:
     return to_human_readable(n_p)
 
 
+def partial_load_state_dict(mod: nn.Module, state_dict: OrderedDict) -> nn.Module:
+    mod_state_dict = mod.state_dict()
+    for k, v in state_dict.items():
+        if k in mod_state_dict and v.shape == mod_state_dict[k]:
+            mod_state_dict[k] = v
+    mod.load_state_dict(mod_state_dict)
+    return mod
+
 def train(
     root: Optional[str] = None,
     name: str = "default",
@@ -213,7 +222,7 @@ def train(
     print(f"total params: {num_params(model)}")
     step = 0
     try:
-        model.load_state_dict(torch.load(checkpoint), strict=False)
+        partial_load_state_dict(model, torch.load(checkpoint, mmap=True))
     except Exception as e:
         print(e)
     try:
