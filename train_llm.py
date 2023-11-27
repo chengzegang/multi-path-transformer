@@ -181,7 +181,7 @@ def train(
     name: str = "default",
     data_name: str = "webtext",
     checkpoint_path: str = "models",
-    lr: float = 1e-4,
+    lr: float = 2e-4,
     num_epochs: int = 10,
     save_every: int = 100,
     grad_accum: int = 2,
@@ -393,7 +393,7 @@ if __name__ == "__main__":
         "model_config": DAVID_500M,
         "warmup_steps": 100,
         "ddp": False,
-        "lr": 5e-4,
+        "lr": 3e-4,
     }
 
     local_config = {
