@@ -66,25 +66,6 @@ def expoential_lr(
         return max(beta ** (step - warmup_steps - initial_step), min_factor)
 
 
-def save_checkpoint(
-    checkpoint_path: str,
-    model: LLM,
-    opt: Optimizer,
-    sched: LambdaLR,
-    step: int,
-):
-    os.makedirs(checkpoint_path, exist_ok=True)
-    model.eval()
-    model.save_to_file(os.path.join(checkpoint_path, "model.pt"))
-    opt_state = opt.state_dict()
-    sched_state = sched.state_dict()
-    torch.save(opt_state, os.path.join(checkpoint_path, "opt.pt"))
-    torch.save(sched_state, os.path.join(checkpoint_path, "sched.pt"))
-    yaml.dump({"step": step}, open(os.path.join(checkpoint_path, "log.yaml"), "w"))
-
-
-
-
 def step_model(
     device: str,
     dl: DataLoader,
@@ -111,9 +92,7 @@ def step_model(
         )
     first_descend_stage_ended = False
 
-    avg_model = AveragedModel(
-        optimized_model, avg_fn=get_ema_avg_fn(0.99), use_buffers=True
-    )
+    avg_model = AveragedModel(model, avg_fn=get_ema_avg_fn(0.99), use_buffers=True)
     wandb.watch(optimized_model)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
@@ -139,8 +118,7 @@ def step_model(
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
                     opt.step()
-                    if step > 10:
-                        avg_model.update_parameters(model)
+                    avg_model.update_parameters(model)
                     opt.zero_grad()
                     sched.step()
                 step += 1
