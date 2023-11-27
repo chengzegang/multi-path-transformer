@@ -333,6 +333,27 @@ def train(
 if __name__ == "__main__":
     import torch._dynamo.config  # type: ignore
 
+    DAVID_100M = {
+        "bunch_size": 2,
+        "hidden_size": 512,
+        "num_layers": 24,
+        "num_heads": 16,
+        "head_size": 64,
+    }
+    DAVID_500M = {
+        "bunch_size": 8,
+        "hidden_size": 512,
+        "num_layers": 80,
+        "num_heads": 16,
+        "head_size": 64,
+    }
+    DAVID_3B = {
+        "bunch_size": 16,
+        "hidden_size": 1024,
+        "num_layers": 96,
+        "num_heads": 16,
+        "head_size": 128,
+    }
     greene_config = {
         "root": "/scratch/work/public/ml-datasets/pile/train/",
         "name": "greene",
@@ -341,16 +362,11 @@ if __name__ == "__main__":
         "grad_accum": 100,
         "save_every": 10,
         "batch_size": 1,
-        "model_config": {
-            "bunch_size": 16,
-            "hidden_size": 1024,
-            "num_layers": 64,
-            "num_heads": 16,
-            "head_size": 128,
-        },
+        "model_config": DAVID_3B,
         "warmup_steps": 0,
         "ddp": False,
     }
+
     local_config = {
         "root": "/home/caleb/data/pile/train/",
         "name": "local",
@@ -359,13 +375,7 @@ if __name__ == "__main__":
         "grad_accum": 100,
         "save_every": 10,
         "batch_size": 1,
-        "model_config": {
-            "bunch_size": 16,
-            "hidden_size": 1024,
-            "num_layers": 32,
-            "num_heads": 16,
-            "head_size": 128,
-        },
+        "model_config": DAVID_500M,
         "ddp": False,
         "warmup_steps": 0,
     }
