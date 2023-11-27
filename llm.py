@@ -15,8 +15,6 @@ import matplotlib
 from transformers import AutoTokenizer
 
 matplotlib.use("Agg")
-cudnn.benchmark = True
-cuda.matmul.allow_tf32 = True
 
 
 class LLM(nn.Module):
