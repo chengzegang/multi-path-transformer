@@ -232,7 +232,7 @@ def train(
             model.parameters(),
             AdamW,
             lr=lr,
-            weight_decay=1e-5,
+            weight_decay=1e-2,
             betas=(0.9, 0.999),
             fused=True,
             parameters_as_bucket_view=True,
@@ -241,7 +241,7 @@ def train(
         opt = AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=1e-5,
+            weight_decay=1e-2,
             fused=True,
             betas=(0.9, 0.999),
         )
