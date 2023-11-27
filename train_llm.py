@@ -198,7 +198,6 @@ def train(
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     ddp: bool = False,
     enable_compiler: bool = False,
-    checkpoint: Optional[str] = "checkpoints/llm-21000.pt",
     warmup_steps: int = 2000,
     ema: bool = True,
 ):
@@ -219,18 +218,14 @@ def train(
     tokenizer.save_pretrained(checkpoint_path)
     print(f"total params: {num_params(model)}")
     step = 0
-    try:
-        partial_load_state_dict(model, torch.load(checkpoint, mmap=True))
-    except Exception as e:
-        print(e)
+
     try:
         ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
-        model.load_state_dict(torch.load(ckpt), strict=False)
+        partial_load_state_dict(model, torch.load(ckpt, mmap=True))
         step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception as e:
-        print(e)
-        print("Starting from scratch")
+        print(f"fail to load ckpt {ckpt}, starting from scratch")
     model = add_gradient_checkpoint(model)
     model = model.to(device).to(dtype)
     opt = None
