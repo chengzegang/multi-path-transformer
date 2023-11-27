@@ -160,6 +160,8 @@ class Attention(nn.Module):
             num_heads * head_size, hidden_size, dtype=torch.bfloat16
         )
         self.rotary = RotaryEmbedding(head_size)
+        self.nonlinear = nn.SiLU(True)
+        self.compile(fullgraph=True, dynamic=False, mode='max-autotune')
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
         if self.orient == "outer":
@@ -213,7 +215,7 @@ class Attention(nn.Module):
 
         attn_scores = self._reshape_scores(attn_scores)
 
-        out = self.out_proj(F.silu(w) * attn_scores)
+        out = self.out_proj(self.nonlinear(w) * attn_scores)
 
         return out, (k, v)
 
@@ -231,6 +233,34 @@ class DecoderLayer(nn.Module):
             hidden_size, num_heads, head_size, orient="inner"
         )
 
+    def _outer_forward(
+        self,
+        hidden_states: Tensor,
+        key_value_states: Optional[
+            Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]
+        ] = None,
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        residual = hidden_states
+        hidden_states = self.pre_outer_norm(residual)
+        hidden_states, inter_key_value_states = self.outer_attention(
+            hidden_states,
+            None if key_value_states is None else key_value_states[0],
+        )
+        residual = residual + hidden_states
+        return residual, inter_key_value_states
+
+    def _inter_forward(
+        self,
+        hidden_states: Tensor,
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        residual = hidden_states
+        hidden_states = self.pre_inter_norm(residual)
+        hidden_states, outer_key_value_states = self.inter_attention(
+            hidden_states, None
+        )
+        residual = residual + hidden_states
+        return residual, outer_key_value_states
+
     def forward(
         self,
         hidden_states: Tensor,
@@ -238,20 +268,11 @@ class DecoderLayer(nn.Module):
             Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]
         ] = None,
     ) -> Tuple[Tensor, Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]:
-        residual = hidden_states
-        hidden_states = self.pre_outer_norm(residual)
-        hidden_states, inter_key_value_states = self.outer_attention(
-            hidden_states,
-            None if key_value_states is None else key_value_states[0],
+        inter_key_value_states, outer_key_value_states = None, None
+        residual, inter_key_value_states = self._outer_forward(
+            hidden_states, key_value_states
         )
-
-        residual = residual + hidden_states
-        hidden_states = self.pre_inter_norm(residual)
-        hidden_states, outer_key_value_states = self.inter_attention(
-            hidden_states, None
-        )
-
-        residual = residual + hidden_states
+        residual, outer_key_value_states = self._inter_forward(residual)
         key_value_states = (inter_key_value_states, outer_key_value_states)
         return residual, key_value_states  # type: ignore
 
@@ -278,13 +299,6 @@ class Decoder(nn.Module):
                 for i in range(num_layers)
             ]
         )
-        self._grad_checkpoint = False
-
-    def enable_gradient_checkpointing(self):
-        self._grad_checkpoint = True
-
-    def disable_gradient_checkpointing(self):
-        self._grad_checkpoint = False
 
     def forward(
         self,
@@ -299,30 +313,14 @@ class Decoder(nn.Module):
         if key_value_states is not None:
             for i, layer in enumerate(self.layers):
                 kvs = key_value_states[i]
-                if self._grad_checkpoint:
-                    hidden_states, new_kvs = checkpoint(
-                        layer,
-                        hidden_states,
-                        kvs,
-                        use_reentrant=True,
-                    )
-                else:
-                    hidden_states, new_kvs = layer(
-                        hidden_states,
-                        kvs,
-                    )
+                hidden_states, new_kvs = layer(
+                    hidden_states,
+                    kvs,
+                )
                 new_key_value_states.append(new_kvs)
             return hidden_states, new_key_value_states
         else:
             for layer in self.layers:
-                if self._grad_checkpoint:
-                    hidden_states, new_kvs = checkpoint(
-                        layer,
-                        hidden_states,
-                        None,
-                        use_reentrant=True,
-                    )
-                else:
-                    hidden_states, new_kvs = layer(hidden_states, None)
+                hidden_states, new_kvs = layer(hidden_states, None)
                 new_key_value_states.append(new_kvs)
             return hidden_states, new_key_value_states

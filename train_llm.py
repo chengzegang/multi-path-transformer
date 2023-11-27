@@ -16,15 +16,36 @@ from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm  # type: ignore
-from transformers import AutoModelForCausalLM, AutoTokenizer  # type:ignore
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+)  # type:ignore
 import wandb
-from llm import LLM
+from llm import LLM, add_gradient_checkpoint
 from torch_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
-import typer
-from torch.cuda.amp import GradScaler
+import evaluate
+from torch.optim.swa_utils import AveragedModel, get_ema_avg_fn
+
+
+class Evaluation:
+    def __init__(self, model: LLM, tokenizer: AutoTokenizer, device: str):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+        self.perplexity = evaluate.load("perplexity", module_type="metric")
+
+    def step(self, step: int):
+        with torch.inference_mode():
+            self.model.eval()
+            text = "This is a"
+            output_str = " ".join(self.model.stream(self.tokenizer, text, 128))
+            results = self.perplexity.compute(predictions=output_str, model_id="gpt2")
+            wandb.log(results["mean_perplexity"], step=step)
+            return results
 
 
 def expoential_lr(
@@ -35,7 +56,7 @@ def expoential_lr(
     step: int = 0,
 ):
     if step < initial_step + warmup_steps:
-        return step / (initial_step + warmup_steps)
+        return max(min_factor, step / (initial_step + warmup_steps))
     else:
         return max(beta ** (step - warmup_steps - initial_step), min_factor)
 
@@ -88,7 +109,10 @@ def step_model(
             static_graph=True,
         )
     first_descend_stage_ended = False
-    wandb.watch(model)
+
+    avg_model = AveragedModel(
+        optimized_model, avg_fn=get_ema_avg_fn(0.99), use_buffers=True
+    )
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             curr_grad_accum = min(grad_accum, step // 100 + 1)
@@ -109,12 +133,14 @@ def step_model(
             )
             pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
+                wandb.watch(model)
                 with torch.autocast(
                     "cuda", torch.float32, enabled=first_descend_stage_ended
                 ):
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
                     opt.step()
+                    avg_model.update_parameters(model)
                     opt.zero_grad()
                     sched.step()
                 step += 1
@@ -205,7 +231,7 @@ def train(
     except Exception as e:
         print(e)
         print("Starting from scratch")
-    model.enable_gradient_checkpointing()
+    model = add_gradient_checkpoint(model)
     model = model.to(device).to(dtype)
     opt = None
     if ddp:
@@ -298,7 +324,7 @@ def train(
         enable_compiler,
         ddp,
     )
-
+    # evaluation = Evaluation(model, tokenizer, device)
     for epoch, step, loss, input_ids, output_ids in iteration:
         if local_rank == 0:
             in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
@@ -317,6 +343,8 @@ def train(
                 step=step,
             )
             if step % save_every == 0 and math.isfinite(loss):
+                # results = evaluation.step(step)
+                # pbar.write(repr(results["mean_perplexity"]))
                 ckpts = glob.glob("models/llm*.pt")
                 if len(ckpts) > 3:
                     os.remove(

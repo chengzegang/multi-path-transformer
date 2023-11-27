@@ -1,4 +1,5 @@
 from functools import partial
+import random
 from typing import List, Optional, Tuple, Union
 
 import bitsandbytes as bnb
@@ -9,8 +10,9 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from modules import Decoder, MSNorm, MPLinear
+from modules import Attention, Decoder, MSNorm, MPLinear
 import matplotlib
+from transformers import AutoTokenizer
 
 matplotlib.use("Agg")
 cudnn.benchmark = True
@@ -101,9 +103,41 @@ class LLM(nn.Module):
                 input_embeds = self.embed_tokens(pred_ids[:, -1:])
         return pred_ids
 
+    @torch.inference_mode()
+    def stream(self, tokenizer: AutoTokenizer, query: str, device: str = "cuda"):
+        self.eval()
+        input_ids = tokenizer.encode(query, return_tensors="pt").to(device)
+        past_key_values = None
+        for _ in range(512):
+            outputs = self(input_ids, past_key_values=past_key_values)
+            pred_logits = outputs["logits"]
+            past_key_values = outputs["past_key_values"]
+            pred_logits = pred_logits[:, -1:].view(-1)
+            topk = 10
+            probs, token_ids = pred_logits.topk(topk, dim=-1, largest=True, sorted=True)
+            probs = (probs * topk).softmax(dim=-1)[probs > 0.01]
+            if probs.numel() > 3:
+                sample_id = torch.multinomial(probs, 3)
+                sample_id = sample_id[random.randint(0, sample_id.numel() - 1)]
+            else:
+                sample_id = 0
+            sample_token_id = token_ids[sample_id]
+            pred_strings = tokenizer.decode(sample_token_id)
+            if sample_token_id == tokenizer.eos_token_id:
+                return pred_strings
+            yield pred_strings
+            input_ids = torch.as_tensor(sample_token_id).view(-1, 1)
+
+
+def _wrapped_forward(mod: nn.Module, *args, **kwargs):
+    if mod.training:
+        return checkpoint(mod._org_forward, *args, use_reentrant=True, **kwargs)
+    else:
+        return mod._org_forward(*args, **kwargs)
+
 
 def add_gradient_checkpoint(model: LLM):
     for layer in model.decoder.layers:
         layer._org_forward = layer.forward
-        layer.forward = partial(checkpoint, layer._org_forward, use_reentrant=False)
+        layer.forward = partial(_wrapped_forward, layer)
     return model
