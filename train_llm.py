@@ -90,7 +90,7 @@ def step_model(
             gradient_as_bucket_view=True,
             static_graph=True,
         )
-    first_descend_stage_ended = False
+    # first_descend_stage_ended = False
     avg_model = None
     if ema:
         avg_model = AveragedModel(
@@ -110,13 +110,13 @@ def step_model(
             optimized_model.train()
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
-            with torch.autocast(
-                "cuda", torch.float32, enabled=first_descend_stage_ended
-            ):
-                (out["loss"] / grad_accum).backward()
+            # with torch.autocast(
+            #    "cuda", torch.float32, enabled=first_descend_stage_ended
+            # ):
+            (out["loss"] / grad_accum).backward()
             loss = out["loss"].item()
-            if not first_descend_stage_ended and loss < 4.0:
-                first_descend_stage_ended = True
+            # if not first_descend_stage_ended and loss < 4.0:
+            #    first_descend_stage_ended = True
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
             pbar.set_description(
@@ -124,16 +124,15 @@ def step_model(
             )
             pbar.update()
             if i % grad_accum == 0 and i > 0:
-                with torch.autocast(
-                    "cuda", torch.float32, enabled=first_descend_stage_ended
-                ):
-                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-
-                    opt.step()
-                    if avg_model is not None:
-                        avg_model.update_parameters(model)
-                    opt.zero_grad()
-                    sched.step()
+                # with torch.autocast(
+                #    "cuda", torch.float32, enabled=first_descend_stage_ended
+                # ):
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                opt.step()
+                if avg_model is not None:
+                    avg_model.update_parameters(model)
+                opt.zero_grad()
+                sched.step()
                 step += 1
                 yield epoch, step, loss, input_ids, output_ids
 
