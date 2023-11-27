@@ -16,6 +16,7 @@ from transformers import AutoTokenizer
 import torch.utils.data.datapipes as dp
 import datasets as ds
 
+
 class Video(SQLModel, table=True):
     id: int = Field(primary_key=True, default=None)
     url: str = Field(default=None, index=True)
@@ -171,31 +172,36 @@ class WebData(IterableDataset):
         ).map(self._raw_content_to_text)
         en_wiki = load_dataset(
             "graelo/wikipedia", "20230601.en", split="train", streaming=True
-        )
-        
+        ).shuffle()
+
         zh_wiki = load_dataset(
             "graelo/wikipedia", "20230601.zh", split="train", streaming=True
-        )
-        
-        zh_cc = load_dataset("uonlp/CulturaX", "zh", split="train", streaming=True)
-        
+        ).shuffle()
+
+        zh_cc = load_dataset(
+            "uonlp/CulturaX", "zh", split="train", streaming=True
+        ).shuffle()
+
         ja_wiki = load_dataset(
-            "graelo/wikipedia", "20230601.ja", split="train", streaming=True
+            "graelo/wikipedia", "20230601.ja", split="train", streaming=True.shuffle()
         )
-       
-        ja_cc = load_dataset("uonlp/CulturaX", "ja", split="train", streaming=True)
-        
+
+        ja_cc = load_dataset(
+            "uonlp/CulturaX", "ja", split="train", streaming=True
+        ).shuffle()
+
         dataset = ds.interleave_datasets(
-            [cc,
-            en_wiki,
-            zh_cc,
-            zh_wiki,
-            ja_cc,
-            ja_wiki,],
+            [
+                cc,
+                en_wiki,
+                zh_cc,
+                zh_wiki,
+                ja_cc,
+                ja_wiki,
+            ],
             [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
             stopping_strategy="all_exhausted",
-        ).shuffle()
-        dataset = dp.iter.IterableWrapper(dataset).shuffle().sharding_filter()
+        )
         return dataset
 
     def __iter__(self):
