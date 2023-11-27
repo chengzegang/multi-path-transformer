@@ -113,10 +113,10 @@ def step_model(
                     "cuda", torch.float32, enabled=first_descend_stage_ended
                 ):
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                    sched.step()
+
                     opt.step()
                     opt.zero_grad()
-
+                    sched.step()
                 step += 1
                 yield epoch, step, loss, input_ids, output_ids
 
