@@ -17,5 +17,5 @@ export CUDA_HOME=/usr/local/cuda-12.2
 singularity exec --nv \
 	    --overlay /scratch/$USER/containers/overlay.ext3:ro  \
 	    /scratch/work/public/singularity/cuda12.2.2-cudnn8.9.4-devel-ubuntu22.04.3.sif \
-	    /bin/bash -c "source /ext3/env.sh; cd /scratch/zc2309/multi-path-transformer/; python /scratch/zc2309/multi-path-transformer/train_llm.py"
+	    /bin/bash -c "source /ext3/env.sh; cd /scratch/zc2309/multi-path-transformer/; pip install evaluate; python /scratch/zc2309/multi-path-transformer/train_llm.py"
 
