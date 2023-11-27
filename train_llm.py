@@ -78,6 +78,7 @@ def step_model(
     pbar: tqdm,
     enable_compiler: bool = True,
     ddp: bool = False,
+    ema: bool = True,
 ):
     loss = 0
     input_ids = None
@@ -91,10 +92,11 @@ def step_model(
             static_graph=True,
         )
     first_descend_stage_ended = False
-
-    avg_model = AveragedModel(
-        model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
-    )
+    avg_model = None
+    if ema:
+        avg_model = AveragedModel(
+            model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
+        )
     wandb.watch(
         (
             model.embed_tokens,
@@ -106,6 +108,7 @@ def step_model(
     )
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
+            optimized_model.train()
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
             with torch.autocast(
@@ -128,7 +131,8 @@ def step_model(
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
                     opt.step()
-                    avg_model.update_parameters(model)
+                    if avg_model is not None:
+                        avg_model.update_parameters(model)
                     opt.zero_grad()
                     sched.step()
                 step += 1
@@ -189,6 +193,7 @@ def train(
     enable_compiler: bool = False,
     checkpoint: Optional[str] = "checkpoints/llm-21000.pt",
     warmup_steps: int = 2000,
+    ema: bool = True,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -311,6 +316,7 @@ def train(
         pbar,
         enable_compiler,
         ddp,
+        ema,
     )
     # evaluation = Evaluation(model, tokenizer, device)
     for epoch, step, loss, input_ids, output_ids in iteration:
@@ -342,6 +348,7 @@ def train(
                     )
                 model.eval()
                 torch.save(model.state_dict(), f"models/llm-{step}.pt")
+                torch.cuda.empty_cache()
 
     pbar.close()
 
@@ -388,13 +395,14 @@ if __name__ == "__main__":
         "root": "/home/caleb/data/pile/train/",
         "name": "local",
         "data_name": "webtext",
-        "max_size": 512,
+        "max_size": 1024,
         "grad_accum": 8,
         "save_every": 10,
         "batch_size": 1,
         "model_config": DAVID_500M,
         "ddp": False,
         "warmup_steps": 0,
+        "ema": False,
     }
     host = os.uname().nodename
     config = None

@@ -183,8 +183,8 @@ class WebData(IterableDataset):
         ).shuffle()
 
         ja_wiki = load_dataset(
-            "graelo/wikipedia", "20230601.ja", split="train", streaming=True.shuffle()
-        )
+            "graelo/wikipedia", "20230601.ja", split="train", streaming=True
+        ).shuffle()
 
         ja_cc = load_dataset(
             "uonlp/CulturaX", "ja", split="train", streaming=True

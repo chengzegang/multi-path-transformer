@@ -161,7 +161,7 @@ class Attention(nn.Module):
         )
         self.rotary = RotaryEmbedding(head_size)
         self.nonlinear = nn.SiLU(True)
-        #self.compile(fullgraph=True, dynamic=False, mode='max-autotune')
+        # self.compile(fullgraph=True, dynamic=False, mode='max-autotune')
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
         if self.orient == "outer":
