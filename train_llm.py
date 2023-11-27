@@ -113,6 +113,7 @@ def step_model(
     avg_model = AveragedModel(
         optimized_model, avg_fn=get_ema_avg_fn(0.99), use_buffers=True
     )
+    wandb.watch(optimized_model)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             curr_grad_accum = min(grad_accum, step // 100 + 1)
@@ -133,7 +134,6 @@ def step_model(
             )
             pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
-                wandb.watch(model)
                 with torch.autocast(
                     "cuda", torch.float32, enabled=first_descend_stage_ended
                 ):
