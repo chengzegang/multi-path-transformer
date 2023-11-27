@@ -133,7 +133,7 @@ def step_model(
                 if avg_model is not None:
                     avg_model.update_parameters(model)
                 opt.zero_grad()
-                sched.step()
+                sched.step(step)
                 step += 1
                 yield epoch, step, loss, input_ids, output_ids
 
@@ -249,7 +249,6 @@ def train(
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, step, warmup_steps, 0.9999, 0.1))
-    sched.step(step)
     data = None
     if data_name == "pile":
         data = Pile(root)
