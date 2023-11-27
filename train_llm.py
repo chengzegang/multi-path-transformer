@@ -121,13 +121,12 @@ def step_model(
     wandb.watch(optimized_model)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
-            curr_grad_accum = min(grad_accum, step // 100 + 1)
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
             with torch.autocast(
                 "cuda", torch.float32, enabled=first_descend_stage_ended
             ):
-                (out["loss"] / curr_grad_accum).backward()
+                (out["loss"] / grad_accum).backward()
             reset_nan_grad(model)
             loss = out["loss"].item()
             if not first_descend_stage_ended and loss < 5.0:
@@ -138,7 +137,7 @@ def step_model(
                 f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}"
             )
             pbar.update()
-            if i % curr_grad_accum == 0 and i > 0:
+            if i % grad_accum == 0 and i > 0:
                 with torch.autocast(
                     "cuda", torch.float32, enabled=first_descend_stage_ended
                 ):
@@ -395,9 +394,10 @@ if __name__ == "__main__":
         "grad_accum": 100,
         "save_every": 10,
         "batch_size": 1,
-        "model_config": DAVID_3B,
-        "warmup_steps": 0,
+        "model_config": DAVID_500M,
+        "warmup_steps": 100,
         "ddp": False,
+        "lr": 5e-4,
     }
 
     local_config = {
