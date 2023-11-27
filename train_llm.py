@@ -99,7 +99,7 @@ def step_model(
         (
             model.embed_tokens,
             model.decoder.layers[0],
-            model.decoder.layers[len(model.decoder.layers // 2)],
+            model.decoder.layers[len(model.decoder.layers) // 2],
             model.decoder.layers[-1],
         ),
         log_freq=100,
