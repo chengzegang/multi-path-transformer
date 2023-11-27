@@ -34,7 +34,6 @@ import torch._dynamo.config
 
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
-cuda.matmul.allow_tf32 = True
 
 
 class Evaluation:
@@ -92,7 +91,7 @@ def step_model(
             gradient_as_bucket_view=True,
             static_graph=True,
         )
-    first_descend_stage_ended = False
+    # first_descend_stage_ended = False
     avg_model = None
     if ema:
         avg_model = AveragedModel(
@@ -112,13 +111,13 @@ def step_model(
             optimized_model.train()
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
-            with torch.autocast(
-                "cuda", torch.float32, enabled=first_descend_stage_ended
-            ):
-                (out["loss"] / grad_accum).backward()
+            # with torch.autocast(
+            #    "cuda", torch.float32, enabled=first_descend_stage_ended
+            # ):
+            (out["loss"] / grad_accum).backward()
             loss = out["loss"].item()
-            if not first_descend_stage_ended and loss < 4.0:
-                first_descend_stage_ended = True
+            # if not first_descend_stage_ended and loss < 4.0:
+            #    first_descend_stage_ended = True
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
             pbar.set_description(
@@ -126,16 +125,15 @@ def step_model(
             )
             pbar.update()
             if i % grad_accum == 0 and i > 0:
-                with torch.autocast(
-                    "cuda", torch.float32, enabled=first_descend_stage_ended
-                ):
-                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-
-                    opt.step()
-                    if avg_model is not None:
-                        avg_model.update_parameters(model)
-                    opt.zero_grad()
-                    sched.step()
+                # with torch.autocast(
+                #    "cuda", torch.float32, enabled=first_descend_stage_ended
+                # ):
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                opt.step()
+                if avg_model is not None:
+                    avg_model.update_parameters(model)
+                opt.zero_grad()
+                sched.step()
                 step += 1
                 yield epoch, step, loss, input_ids, output_ids
 
@@ -241,7 +239,7 @@ def train(
             model.parameters(),
             AdamW,
             lr=lr,
-            weight_decay=1e-5,
+            weight_decay=1e-2,
             betas=(0.9, 0.999),
             fused=True,
             parameters_as_bucket_view=True,
@@ -250,7 +248,7 @@ def train(
         opt = AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=1e-5,
+            weight_decay=1e-2,
             fused=True,
             betas=(0.9, 0.999),
         )
@@ -391,13 +389,13 @@ if __name__ == "__main__":
         "name": "greene",
         "data_name": "pile",
         "max_size": 4096,
-        "grad_accum": 100,
+        "grad_accum": 32,
         "save_every": 10,
         "batch_size": 1,
         "model_config": DAVID_500M,
         "warmup_steps": 100,
         "ddp": False,
-        "lr": 3e-4,
+        "lr": 2e-4,
     }
 
     local_config = {

@@ -44,7 +44,9 @@ class LLM(nn.Module):
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
         self.lm_head_norm = MSNorm(hidden_size)
-        self.lm_head = MPLinear(hidden_size, vocab_size, dtype=torch.bfloat16)
+        self.lm_head = nn.Linear(
+            hidden_size * bunch_size, vocab_size, dtype=torch.bfloat16
+        )
 
     def enable_gradient_checkpointing(self):
         self.decoder.enable_gradient_checkpointing()
@@ -73,10 +75,10 @@ class LLM(nn.Module):
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-        pred_logits = pred_logits.view(
-            pred_logits.shape[0], pred_logits.shape[1], self.bunch_size, self.vocab_size
-        )
-        pred_logits = torch.logsumexp(pred_logits, dim=-2)
+        # pred_logits = pred_logits.view(
+        #    pred_logits.shape[0], pred_logits.shape[1], self.bunch_size, self.vocab_size
+        # )
+        # pred_logits = torch.logsumexp(pred_logits, dim=-2)
         loss = None
         if labels is not None:
             loss = F.cross_entropy(
