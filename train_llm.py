@@ -33,7 +33,6 @@ import torch._dynamo.config
 
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
-cuda.matmul.allow_tf32 = True
 
 
 class Evaluation:
