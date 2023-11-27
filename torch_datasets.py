@@ -6,14 +6,10 @@ import random
 from typing import Iterable
 
 import aiofiles
-import cv2 as cv
 import httpx
 import jsonlines as jl
-import sqlmodel
-import torch
 import torchvision
 from datasets import load_dataset
-import datasets as ds
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from torch.utils.data import IterableDataset, IterDataPipe
 from transformers import AutoTokenizer

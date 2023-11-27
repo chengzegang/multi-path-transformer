@@ -129,7 +129,7 @@ def step_model(
                 (out["loss"] / grad_accum).backward()
             reset_nan_grad(model)
             loss = out["loss"].item()
-            if not first_descend_stage_ended and loss < 5.0:
+            if not first_descend_stage_ended and loss < 4.0:
                 first_descend_stage_ended = True
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
@@ -144,7 +144,8 @@ def step_model(
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
                     opt.step()
-                    avg_model.update_parameters(model)
+                    if step > 10:
+                        avg_model.update_parameters(model)
                     opt.zero_grad()
                     sched.step()
                 step += 1
