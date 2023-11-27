@@ -306,6 +306,7 @@ def train(
     num_samples = total_tokens // max_size
     num_batches = num_samples // batch_size
     pbar = tqdm(total=num_batches, dynamic_ncols=True)
+    pbar.update(step)
     iteration = step_model(
         device,
         dl,
