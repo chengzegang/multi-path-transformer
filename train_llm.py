@@ -29,7 +29,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
 import evaluate
 from torch.optim.swa_utils import AveragedModel, get_ema_avg_fn
-
+import torch._dynamo.config
+torch._dynamo.config.cache_size_limit = 256
 
 class Evaluation:
     def __init__(self, model: LLM, tokenizer: AutoTokenizer, device: str):
