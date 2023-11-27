@@ -145,16 +145,20 @@ class RotaryEmbedding(torch.nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, hidden_size: int, head_size: int, orient: str = "outer"):
+    def __init__(
+        self, hidden_size: int, num_heads: int, head_size: int, orient: str = "outer"
+    ):
         super().__init__()
         self.hidden_size = hidden_size
         self.head_size = head_size
         self.orient = orient
-        self.q_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
-        self.k_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
-        self.v_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
-        self.w_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
-        self.out_proj = MPLinear(hidden_size, hidden_size, dtype=torch.bfloat16)
+        self.q_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.k_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.v_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.w_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.out_proj = MPLinear(
+            num_heads * head_size, hidden_size, dtype=torch.bfloat16
+        )
         self.rotary = RotaryEmbedding(head_size)
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
@@ -215,13 +219,17 @@ class Attention(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, hidden_size: int, head_size: int):
+    def __init__(self, hidden_size: int, num_heads: int, head_size: int):
         super().__init__()
         self.pre_outer_norm = MSNorm(hidden_size)
-        self.outer_attention = Attention(hidden_size, head_size, orient="outer")
+        self.outer_attention = Attention(
+            hidden_size, num_heads, head_size, orient="outer"
+        )
 
         self.pre_inter_norm = MSNorm(hidden_size)
-        self.inter_attention = Attention(hidden_size, hidden_size, orient="inner")
+        self.inter_attention = Attention(
+            hidden_size, num_heads, head_size, orient="inner"
+        )
 
     def forward(
         self,
@@ -253,6 +261,7 @@ class Decoder(nn.Module):
         self,
         hidden_size: int = 512,
         num_layers: int = 32,
+        num_heads: int = 8,
         head_size: int = 128,
     ):
         super().__init__()
@@ -263,6 +272,7 @@ class Decoder(nn.Module):
             [
                 DecoderLayer(
                     hidden_size=hidden_size,
+                    num_heads=num_heads,
                     head_size=head_size,
                 )
                 for i in range(num_layers)

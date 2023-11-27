@@ -24,6 +24,7 @@ class LLM(nn.Module):
         bunch_size: int = 8,
         hidden_size: int = 512,
         num_layers: int = 80,
+        num_heads: int = 8,
         head_size: int = 64,
         padding_idx: int = 0,
     ):
@@ -41,7 +42,7 @@ class LLM(nn.Module):
             dtype=torch.bfloat16,
         )
         self.embed_norm = MSNorm(hidden_size)
-        self.decoder = Decoder(hidden_size, num_layers, head_size)
+        self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
         self.lm_head_norm = MSNorm(hidden_size)
         self.lm_head = MPLinear(hidden_size, vocab_size, dtype=torch.bfloat16)
 
