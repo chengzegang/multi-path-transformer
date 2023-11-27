@@ -186,12 +186,12 @@ class WebData(IterableDataset):
         ja_cc = load_dataset("uonlp/CulturaX", "ja", split="train", streaming=True)
         
         dataset = ds.interleave_datasets(
-            cc,
+            [cc,
             en_wiki,
             zh_cc,
             zh_wiki,
             ja_cc,
-            ja_wiki,
+            ja_wiki,],
             [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
             stopping_strategy="all_exhausted",
         ).shuffle()
