@@ -371,7 +371,7 @@ if __name__ == "__main__":
         "root": "/home/caleb/data/pile/train/",
         "name": "local",
         "data_name": "webtext",
-        "max_size": 512,
+        "max_size": 1024,
         "grad_accum": 100,
         "save_every": 10,
         "batch_size": 1,
