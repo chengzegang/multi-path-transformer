@@ -213,7 +213,7 @@ class Attention(nn.Module):
 
         attn_scores = self._reshape_scores(attn_scores)
 
-        out = self.out_proj(F.sigmoid(w) * attn_scores)
+        out = self.out_proj(F.silu(w) * attn_scores)
 
         return out, (k, v)
 

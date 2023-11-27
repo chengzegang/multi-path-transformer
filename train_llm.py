@@ -113,10 +113,10 @@ def step_model(
                     "cuda", torch.float32, enabled=first_descend_stage_ended
                 ):
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                    sched.step()
+
                     opt.step()
                     opt.zero_grad()
-
+                    sched.step()
                 step += 1
                 yield epoch, step, loss, input_ids, output_ids
 
@@ -340,13 +340,13 @@ if __name__ == "__main__":
         "max_size": 4096,
         "grad_accum": 100,
         "save_every": 10,
-        "batch_size": 1,
+        "batch_size": 2,
         "model_config": {
-            "bunch_size": 8,
-            "hidden_size": 1024,
+            "bunch_size": 16,
+            "hidden_size": 512,
             "num_layers": 80,
-            "num_heads": 8,
-            "head_size": 128,
+            "num_heads": 16,
+            "head_size": 64,
         },
         "warmup_steps": 0,
         "ddp": False,
