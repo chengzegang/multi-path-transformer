@@ -93,7 +93,7 @@ def step_model(
     first_descend_stage_ended = False
 
     avg_model = AveragedModel(model, avg_fn=get_ema_avg_fn(0.99), use_buffers=True)
-    wandb.watch(optimized_model)
+    wandb.watch(optimized_model, log_freq=100)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
