@@ -69,7 +69,7 @@ def expoential_lr(
 def step_model(
     device: str,
     dl: DataLoader,
-    model: nn.Module,
+    model: LLM,
     opt: Optimizer,
     sched: LambdaLR,
     num_epochs: int,
@@ -95,7 +95,15 @@ def step_model(
     avg_model = AveragedModel(
         model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
     )
-    wandb.watch(optimized_model, log_freq=100)
+    wandb.watch(
+        (
+            model.embed_tokens,
+            model.decoder.layers[0],
+            model.decoder.layers[len(model.decoder.layers // 2)],
+            model.decoder.layers[-1],
+        ),
+        log_freq=100,
+    )
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             batch = batch.to(device)
