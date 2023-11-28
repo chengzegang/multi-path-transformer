@@ -11,3 +11,4 @@ evaluate
 bitsandbytes
 matplotlib
 jsonlines
+pynvml
