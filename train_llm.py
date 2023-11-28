@@ -302,9 +302,9 @@ def train(
         wandb.init(
             # set the wandb project where this run will be logged
             project="llm",
-            name=f"llm-{hostname}",
+            name=f"llm-{hostname}-{name}",
             # track hyperparameters and run metadata
-            id=f"llm-{hostname}-{date}",
+            id=f"llm-{hostname}-{name}-{date}",
             resume="allow",
             config={
                 "grad_accum": grad_accum,

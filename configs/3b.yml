@@ -1,13 +1,15 @@
-name: ai4ce
+name: 3b
 data_name: webtext
-max_size: 1024
-grad_accum: 32
-batch_size: 4
-warmup_steps: 0
+max_size: 4096
+grad_accum: 16
+save_every: 10
+batch_size: 2
+warmup_steps: 100
 model_config:
   bunch_size: 16
   hidden_size: 1024
   num_layers: 96
   num_heads: 16
   head_size: 128
+lr: 2.0e-4
 distributed: true
