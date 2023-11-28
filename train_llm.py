@@ -33,6 +33,7 @@ from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
 import evaluate
 from torch.optim.swa_utils import AveragedModel, get_ema_avg_fn
 import torch._dynamo.config
+from torch.distributed.pipeline.sync import Pipe  # type: ignore
 
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
@@ -124,7 +125,9 @@ def step_model(
         for i, batch in enumerate(dl):
             optimized_model.train()
             batch = batch.to(device)
-            out = optimized_model(batch.input_ids, labels=batch.input_ids)
+            out = optimized_model._pipeline_forward(
+                batch.input_ids, labels=batch.input_ids
+            )
             # with torch.autocast(
             #    "cuda", torch.float32, enabled=first_descend_stage_ended
             # ):
@@ -134,10 +137,11 @@ def step_model(
             #    first_descend_stage_ended = True
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
-            pbar.set_description(
-                f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}"
-            )
-            pbar.update()
+            if pbar is not None:
+                pbar.set_description(
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}"
+                )
+                pbar.update()
             if i % grad_accum == 0 and i > 0:
                 # with torch.autocast(
                 #    "cuda", torch.float32, enabled=first_descend_stage_ended

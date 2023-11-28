@@ -1,7 +1,7 @@
 from functools import partial
 import random
 from typing import List, Optional, Tuple, Union
-
+import torch.distributed as dist
 import bitsandbytes as bnb
 import torch
 import torch.nn.functional as F
@@ -66,6 +66,40 @@ class LLM(nn.Module):
     ) -> Tensor:
         states = self.decoder(input_embeds, attn_mask=attn_mask)
         return states
+
+    def _init_pipeline_parallism(self):
+        world_size = dist.get_world_size()
+        self.embed_tokens.to(0)
+        self.embed_norm.to(0)
+        n_layers_per_device = len(self.decoder.layers) // world_size
+        for i in range(world_size):
+            self.decoder.layers[
+                i * n_layers_per_device : (i + 1) * n_layers_per_device
+            ].to(i)
+        self.lm_head_norm.to(world_size - 1)
+        self.lm_head.to(world_size - 1)
+
+    def _pipeline_forward(
+        self,
+        input_ids: Tensor,
+        labels: Tensor,
+    ) -> Tensor:
+        if not hasattr(self, "_pipeline_initialized"):
+            self._init_pipeline_parallism()
+            setattr(self, "_pipeline_initialized", True)
+        input_ids = input_ids.to(0)
+        input_embeds = self.embed_tokens(input_ids)
+        input_embeds = self.embed_norm(input_embeds)
+        pred_logits = self.decoder._pipeline_forward(input_embeds)
+        pred_logits = pred_logits.to(dist.get_world_size() - 1)
+        pred_logits = self.lm_head_norm(pred_logits)
+        pred_logits = self.lm_head(pred_logits)
+
+        loss = F.cross_entropy(
+            pred_logits[:, :-1].flatten(0, 1),
+            labels[:, 1:].reshape(-1).to(dist.get_world_size() - 1),
+        )
+        return {"logits": pred_logits, "loss": loss}
 
     def forward(
         self,
