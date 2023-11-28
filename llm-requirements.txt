@@ -1,8 +1,6 @@
 typer
 wandb
-torch
-torchvision
-torchaudio
+
 transformers
 datasets
 sentencepiece
