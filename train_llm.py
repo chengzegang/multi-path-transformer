@@ -350,7 +350,6 @@ def train(
                     )
                 model.eval()
                 torch.save(model.state_dict(), f"models/llm-{step}.pt")
-                torch.cuda.empty_cache()
 
     pbar.close()
 
