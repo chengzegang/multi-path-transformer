@@ -137,16 +137,13 @@ class RotaryEmbedding(torch.nn.Module):
 
 
 class MonteCarloDropout(nn.Module):
-    def __init__(self, hidden_size: int, p: float = 0.1, inplace: bool = False):
+    def __init__(self, p: float = 0.1, inplace: bool = False):
         super().__init__()
-        self.hidden_size = hidden_size
         self.p = p
         self.inplace = inplace
 
     def forward(self, x: Tensor) -> Tensor:
-        mhx = x.view(-1, self.hidden_size)
-        mhx = F.dropout1d(mhx, self.p, True, self.inplace)
-        x = mhx.view_as(x)
+        x = F.dropout(x, self.p, True, self.inplace)
         return x
 
 
@@ -163,7 +160,7 @@ class Attention(nn.Module):
         self.hidden_size = hidden_size
         self.head_size = head_size
         self.orient = orient
-        self.dropout = MonteCarloDropout(hidden_size, dropout)
+        self.dropout = MonteCarloDropout(dropout)
         self.q_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
         self.k_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
         self.v_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
@@ -225,7 +222,9 @@ class Attention(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.1):
+    def __init__(
+        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.1
+    ):
         super().__init__()
         self.pre_outer_norm = MSNorm(hidden_size)
         self.outer_attention = Attention(
@@ -300,7 +299,7 @@ class Decoder(nn.Module):
                     hidden_size=hidden_size,
                     num_heads=num_heads,
                     head_size=head_size,
-                    dropout=dropout
+                    dropout=dropout,
                 )
                 for _ in range(num_layers)
             ]
