@@ -116,10 +116,7 @@ class LLM(nn.Module):
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-        # pred_logits = pred_logits.view(
-        #    pred_logits.shape[0], pred_logits.shape[1], self.bunch_size, self.vocab_size
-        # )
-        # pred_logits = torch.logsumexp(pred_logits, dim=-2)
+
         loss = None
         if labels is not None:
             loss = F.cross_entropy(
