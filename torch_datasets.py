@@ -208,22 +208,29 @@ class WebData(IterableDataset):
         for d in self.load_dataset():
             yield {"text": d["text"]}
 
+
 class Jsonlines(IterableDataset):
     def __init__(self, path: str):
         super().__init__()
         self.path = path
-    
+
     def __iter__(self):
         with jl.open(self.path) as file:
             for line in file:
                 yield line
+
 
 class Pile_(IterableDataset):
     def __init__(self, root: str):
         super().__init__()
         self.root = root
         files = glob.glob(os.path.join(self.root, "*.jsonl"))
-        self.data = dp.iter.Multiplexer(*[dp.iter.IterableWrapper(Jsonlines(f)).shuffle().sharding_filter() for f in files]).shuffle()
+        self.data = dp.iter.Multiplexer(
+            *[
+                dp.iter.IterableWrapper(Jsonlines(f)).shuffle().sharding_filter()
+                for f in files
+            ]
+        ).shuffle()
 
     def __iter__(self):
         for d in self.data:

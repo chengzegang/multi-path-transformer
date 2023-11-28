@@ -136,14 +136,34 @@ class RotaryEmbedding(torch.nn.Module):
         )
 
 
+class MonteCarloDropout(nn.Module):
+    def __init__(self, hidden_size: int, p: float = 0.1, inplace: bool = False):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.p = p
+        self.inplace = inplace
+
+    def forward(self, x: Tensor) -> Tensor:
+        mhx = x.view(-1, self.hidden_size)
+        mhx = F.dropout1d(mhx, self.p, True, self.inplace)
+        x = mhx.view_as(x)
+        return x
+
+
 class Attention(nn.Module):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, orient: str = "outer"
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        orient: str = "outer",
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.head_size = head_size
         self.orient = orient
+        self.dropout = MonteCarloDropout(hidden_size, dropout)
         self.q_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
         self.k_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
         self.v_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
@@ -151,7 +171,6 @@ class Attention(nn.Module):
         self.out_proj = Linear(num_heads * head_size, hidden_size, dtype=torch.bfloat16)
         self.rotary = RotaryEmbedding(head_size)
         self.nonlinear = nn.SiLU(True)
-        # self.compile(fullgraph=True, dynamic=False, mode='max-autotune')
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
         hidden_states = hidden_states.view(
@@ -176,6 +195,7 @@ class Attention(nn.Module):
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        hidden_states = self.dropout(hidden_states)
         q: Tensor = self.q_proj(hidden_states)
         k: Tensor = self.k_proj(hidden_states)
         v: Tensor = self.v_proj(hidden_states)

@@ -48,6 +48,7 @@ class LLM(nn.Module):
         self.lm_head = nn.Linear(
             hidden_size * bunch_size, vocab_size, dtype=torch.bfloat16
         )
+        self.lm_nonlinear = nn.Sigmoid()
 
     @property
     def model_config(self):
@@ -109,6 +110,8 @@ class LLM(nn.Module):
             List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
         ] = None,
     ):
+        if dist.is_initialized() and dist.get_world_size() > 1 and self.training:
+            return self._pipeline_forward(input_ids, labels)
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
@@ -116,13 +119,12 @@ class LLM(nn.Module):
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-
+        pred_logits = torch.softmax(pred_logits, dim=-1)
         loss = None
         if labels is not None:
-            loss = F.cross_entropy(
-                pred_logits[:, :-1].flatten(0, 1),
-                labels[:, 1:].reshape(-1),
-            )
+            target = labels[:, 1:].reshape(-1)
+            pred = pred_logits[:, :-1].flatten(0, 1)
+            loss = F.cross_entropy(pred, target)
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):
