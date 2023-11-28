@@ -129,7 +129,9 @@ def step_model(
     target_num_tokens_per_batch = 1000_000
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(grad_accumulation_scheduler, init_accum_steps=grad_accum, last_accum_steps=target_grad_accum)
+    
     for epoch in range(num_epochs):
+        accum_loss = 0
         for i, batch in enumerate(dl):
             curr_grad_accum = schedule_grad_accum(step)
             optimized_model.train()
@@ -139,13 +141,13 @@ def step_model(
             )
 
             (out["loss"] / curr_grad_accum).backward()
-            loss = out["loss"].item()
+            accum_loss += out["loss"] / curr_grad_accum
 
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
             if pbar is not None:
                 pbar.set_description(
-                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {curr_grad_accum}"
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {curr_grad_accum}"
                 )
                 pbar.update()
             if step % curr_grad_accum == 0 and step > 0 and i > 0:
@@ -157,8 +159,8 @@ def step_model(
                 opt.zero_grad()
                 sched.step(step)
                 step += 1
-                yield epoch, step, loss, input_ids, output_ids
-
+                yield epoch, step, accum_loss, input_ids, output_ids
+                accum_loss = 0
 
 def optimize_model(model: LLM, enabled: bool = True) -> nn.Module:
     proxy_model = model
