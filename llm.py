@@ -95,7 +95,6 @@ class LLM(nn.Module):
         pred_logits = pred_logits.to(dist.get_world_size() - 1)
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-        pred_logits = self.lm_nonlinear(pred_logits)
 
         loss = F.cross_entropy(
             pred_logits[:, :-1].flatten(0, 1),
@@ -120,13 +119,12 @@ class LLM(nn.Module):
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-        pred_logits = self.lm_nonlinear(pred_logits)
+        pred_logits = torch.softmax(pred_logits, dim=-1)
         loss = None
         if labels is not None:
             target = labels[:, 1:].reshape(-1, 1)
             pred = pred_logits[:, :-1].flatten(0, 1)
-            likelihood = pred.gather(-1, target)
-            loss = -torch.log(likelihood).mean()
+            loss = F.cross_entropy(pred, target)
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):

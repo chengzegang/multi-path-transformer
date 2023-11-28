@@ -338,7 +338,7 @@ def train(
     pbar = None
     num_tokens_per_batch = batch_size * max_size
     if local_rank == 0:
-        pbar = tqdm(total=num_batches, dynamic_ncols=True)
+        pbar = tqdm(total=num_batches, dynamic_ncols=True, unit_scale=True)
         pbar.update(step)
     iteration = step_model(
         device,
@@ -499,7 +499,7 @@ if __name__ == "__main__":
         "max_size": 1024,
         "grad_accum": 8,
         "save_every": 10,
-        "batch_size": 1,
+        "batch_size": 8,
         "model_config": DAVID_100M,
         "warmup_steps": 0,
         "ema": False,
