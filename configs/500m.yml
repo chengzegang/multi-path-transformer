@@ -3,7 +3,7 @@ name: greene-500m
 data_name: pile
 max_size: 4096
 grad_accum: 32
-batch_size: 16
+batch_size: 8
 warmup_steps: 0
 lr: 1.0e-4
 model_config:
