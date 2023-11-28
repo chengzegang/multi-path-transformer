@@ -158,7 +158,7 @@ def step_model(
                 if avg_model is not None:
                     avg_model.update_parameters(model)
                 opt.zero_grad()
-                sched.step(step - init_step)
+                sched.step(step)
                 step += 1
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = 0
