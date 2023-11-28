@@ -287,7 +287,7 @@ class Decoder(nn.Module):
         num_layers: int = 32,
         num_heads: int = 8,
         head_size: int = 128,
-        dropout: float = 0.1,
+        dropout: float = 0.2,
     ):
         super().__init__()
         self.hidden_size = hidden_size
