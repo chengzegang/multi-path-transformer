@@ -152,13 +152,18 @@ class MonteCarloDropout(nn.Module):
 
 class Attention(nn.Module):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, orient: str = "outer"
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        orient: str = "outer",
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.head_size = head_size
         self.orient = orient
-        self.dropout = MonteCarloDropout(hidden_size, 0.1)
+        self.dropout = MonteCarloDropout(hidden_size, dropout)
         self.q_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
         self.k_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
         self.v_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
@@ -166,8 +171,6 @@ class Attention(nn.Module):
         self.out_proj = Linear(num_heads * head_size, hidden_size, dtype=torch.bfloat16)
         self.rotary = RotaryEmbedding(head_size)
         self.nonlinear = nn.SiLU(True)
-
-        # self.compile(fullgraph=True, dynamic=False, mode='max-autotune')
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
         hidden_states = hidden_states.view(
