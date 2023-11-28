@@ -227,7 +227,7 @@ def train(
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     distributed: bool = False,
     enable_compiler: bool = False,
-    warmup_steps: int = 2000,
+    warmup_steps: int = 100,
     ema: bool = True,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
