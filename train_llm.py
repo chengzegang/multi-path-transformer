@@ -116,7 +116,7 @@ def step_model(
     avg_model = None
     if ema:
         avg_model = AveragedModel(
-            model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
+            model, device="cpu", avg_fn=get_ema_avg_fn(0.9), use_buffers=True
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(
@@ -135,7 +135,7 @@ def step_model(
         init_accum_steps=grad_accum,
         last_accum_steps=target_grad_accum,
     )
-
+    init_step = step
     for epoch in range(num_epochs):
         accum_loss = 0
         for i, batch in enumerate(dl):
@@ -160,7 +160,7 @@ def step_model(
                 if avg_model is not None:
                     avg_model.update_parameters(model)
                 opt.zero_grad()
-                sched.step(step)
+                sched.step(step - init_step)
                 step += 1
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = 0

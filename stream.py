@@ -9,12 +9,28 @@ import glob
 @torch.inference_mode()
 def stream(model_id: str, query: str):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model_config: dict = {
-        "bunch_size": 8,
+    DAVID_100M = {
+        "bunch_size": 2,
         "hidden_size": 512,
-        "num_layers": 32,
+        "num_layers": 24,
+        "num_heads": 16,
         "head_size": 64,
     }
+    DAVID_500M = {
+        "bunch_size": 8,
+        "hidden_size": 512,
+        "num_layers": 80,
+        "num_heads": 16,
+        "head_size": 64,
+    }
+    DAVID_3B = {
+        "bunch_size": 16,
+        "hidden_size": 1024,
+        "num_layers": 96,
+        "num_heads": 16,
+        "head_size": 128,
+    }
+    model_config = DAVID_100M
     model = LLM(tokenizer.vocab_size, **model_config).to(
         dtype=torch.bfloat16, device="cuda"
     )
@@ -48,7 +64,7 @@ def stream(model_id: str, query: str):
 
 for t in stream(
     "meta-llama/Llama-2-7b-chat-hf",
-    "你好",
+    "Hello!",
 ):
     print(t + " ", end="", flush=True)
 
