@@ -154,7 +154,7 @@ class Attention(nn.Module):
         num_heads: int,
         head_size: int,
         orient: str = "outer",
-        dropout: float = 0.1,
+        dropout: float = 0.01,
     ):
         super().__init__()
         self.hidden_size = hidden_size
