@@ -122,7 +122,7 @@ class LLM(nn.Module):
         pred_logits = torch.softmax(pred_logits, dim=-1)
         loss = None
         if labels is not None:
-            target = labels[:, 1:].reshape(-1, 1)
+            target = labels[:, 1:].reshape(-1)
             pred = pred_logits[:, :-1].flatten(0, 1)
             loss = F.cross_entropy(pred, target)
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
