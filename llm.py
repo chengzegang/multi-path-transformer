@@ -119,7 +119,6 @@ class LLM(nn.Module):
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-        pred_logits = torch.softmax(pred_logits, dim=-1)
         loss = None
         if labels is not None:
             target = labels[:, 1:].reshape(-1)

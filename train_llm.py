@@ -67,7 +67,7 @@ def expoential_lr(
     step: int = 0,
 ):
     if step < initial_step + warmup_steps:
-        return max(min_factor, step / (initial_step + warmup_steps))
+        return max(1e-8, step / (initial_step + warmup_steps))
     else:
         return max(beta ** (step - warmup_steps - initial_step), min_factor)
 
@@ -78,9 +78,6 @@ def grad_accumulation_scheduler(
     curr_steps = min(last_accum_steps, math.ceil(init_accum_steps + (1 + rate) ** step))
     return curr_steps
 
-
-def perplexity(input_ids: Tensor, output_logits: Tensor) -> Tensor:
-    probs = output_logits.gather(-1, input_ids.unsqueeze(-1))
 
 def step_model(
     device: str,
@@ -254,7 +251,11 @@ def train(
     try:
         ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
-        partial_load_state_dict(model, torch.load(ckpt, mmap=True))
+        try:
+            model.load_state_dict(torch.load(ckpt, map_location="cpu"))
+        except Exception as e:
+            print(e)
+            partial_load_state_dict(model, torch.load(ckpt, mmap=True))
         step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
