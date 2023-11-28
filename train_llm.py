@@ -96,8 +96,8 @@ def step_model(
         #    gradient_as_bucket_view=True,
         #    static_graph=True,
         # )
-        nnodes = os.getenv("NNODES", 1)
-        nproc_per_node = os.getenv("NPROC-PER-NODE", 1)
+        nnodes = int(os.getenv("NNODES", 1))
+        nproc_per_node = int(os.getenv("NPROC_PER_NODE", 1))
         total_gpus = nnodes * nproc_per_node
         mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
         mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
@@ -111,7 +111,7 @@ def step_model(
             model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
         )
     wandb.watch(
-        (
+        (``
             model.embed_tokens,
             model.decoder.layers[0],
             model.decoder.layers[len(model.decoder.layers) // 2],
