@@ -63,7 +63,7 @@ def expoential_lr(
     initial_step: int = 0,
     warmup_steps=2000,
     beta: float = 0.95,
-    min_factor: float = 0.01,
+    min_factor: float = 0.1,
     step: int = 0,
 ):
     if step < initial_step + warmup_steps:
