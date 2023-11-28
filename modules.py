@@ -225,16 +225,16 @@ class Attention(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, hidden_size: int, num_heads: int, head_size: int):
+    def __init__(self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.1):
         super().__init__()
         self.pre_outer_norm = MSNorm(hidden_size)
         self.outer_attention = Attention(
-            hidden_size, num_heads, head_size, orient="outer"
+            hidden_size, num_heads, head_size, "outer", dropout
         )
 
         self.pre_inter_norm = MSNorm(hidden_size)
         self.inter_attention = Attention(
-            hidden_size, num_heads, head_size, orient="inner"
+            hidden_size, num_heads, head_size, "inner", dropout
         )
 
     def _outer_forward(
@@ -288,6 +288,7 @@ class Decoder(nn.Module):
         num_layers: int = 32,
         num_heads: int = 8,
         head_size: int = 128,
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -299,6 +300,7 @@ class Decoder(nn.Module):
                     hidden_size=hidden_size,
                     num_heads=num_heads,
                     head_size=head_size,
+                    dropout=dropout
                 )
                 for _ in range(num_layers)
             ]
