@@ -90,7 +90,7 @@ def step_model(
     pbar: tqdm,
     enable_compiler: bool = True,
     distributed: bool = False,
-    ema: bool = True,
+    ema: bool = False,
     num_tokens_per_batch: int = 0,
 ):
     # loss = 0
@@ -125,9 +125,8 @@ def step_model(
                 model.decoder.layers[len(model.decoder.layers) // 2],
                 model.decoder.layers[-1],
             ),
-            log_freq=100,
         )
-    target_num_tokens_per_batch = 1000_000
+    target_num_tokens_per_batch = 1024 * 4096
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
