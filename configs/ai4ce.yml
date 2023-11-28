@@ -10,4 +10,4 @@ model_config:
   num_layers: 24
   num_heads: 16
   head_size: 64
-ddp: false
+distributed: true

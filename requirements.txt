@@ -1,0 +1,12 @@
+typer
+wandb
+torch
+torchvision
+torchaudio
+transformers
+datasets
+sentencepiece
+accelerate
+evaluate
+bitsandbytes
+matplotlib
