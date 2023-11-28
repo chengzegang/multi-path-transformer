@@ -111,6 +111,8 @@ class LLM(nn.Module):
             List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
         ] = None,
     ):
+        if dist.is_initialized() and dist.get_world_size() > 1 and self.training:
+            return self._pipeline_forward(input_ids, labels)
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
@@ -123,7 +125,7 @@ class LLM(nn.Module):
         if labels is not None:
             target = labels[:, 1:].reshape(-1, 1)
             pred = pred_logits[:, :-1].flatten(0, 1)
-            likelihood = pred.gather(target)
+            likelihood = pred.gather(-1, target)
             loss = -torch.log(likelihood).mean()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 

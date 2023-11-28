@@ -72,8 +72,10 @@ def expoential_lr(
         return max(beta ** (step - warmup_steps - initial_step), min_factor)
 
 
-def grad_accumulation_scheduler(step: int, init_accum_steps: int = 0, last_accum_steps: int=0, rate: float = 0.1):
-    curr_steps = min(last_accum_steps, math.ceil(init_accum_steps + (1+rate) ** step))
+def grad_accumulation_scheduler(
+    step: int, init_accum_steps: int = 0, last_accum_steps: int = 0, rate: float = 0.1
+):
+    curr_steps = min(last_accum_steps, math.ceil(init_accum_steps + (1 + rate) ** step))
     return curr_steps
 
 
@@ -92,7 +94,7 @@ def step_model(
     ema: bool = True,
     num_tokens_per_batch: int = 0,
 ):
-    loss = 0
+    # loss = 0
     input_ids = None
     output_ids = None
     optimized_model = optimize_model(model, enable_compiler)
@@ -128,17 +130,19 @@ def step_model(
         )
     target_num_tokens_per_batch = 1000_000
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
-    schedule_grad_accum = partial(grad_accumulation_scheduler, init_accum_steps=grad_accum, last_accum_steps=target_grad_accum)
-    
+    schedule_grad_accum = partial(
+        grad_accumulation_scheduler,
+        init_accum_steps=grad_accum,
+        last_accum_steps=target_grad_accum,
+    )
+
     for epoch in range(num_epochs):
         accum_loss = 0
         for i, batch in enumerate(dl):
             curr_grad_accum = schedule_grad_accum(step)
             optimized_model.train()
             batch = batch.to(device)
-            out = optimized_model._pipeline_forward(
-                batch.input_ids, labels=batch.input_ids
-            )
+            out = optimized_model(batch.input_ids, labels=batch.input_ids)
 
             (out["loss"] / curr_grad_accum).backward()
             accum_loss += out["loss"] / curr_grad_accum
@@ -150,8 +154,7 @@ def step_model(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {curr_grad_accum}"
                 )
                 pbar.update()
-            if step % curr_grad_accum == 0 and step > 0 and i > 0:
-
+            if i % curr_grad_accum == 0 and i > 0:
                 nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
@@ -161,6 +164,7 @@ def step_model(
                 step += 1
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = 0
+
 
 def optimize_model(model: LLM, enabled: bool = True) -> nn.Module:
     proxy_model = model
@@ -327,7 +331,7 @@ def train(
                 "num_params": num_params(model),
             },
         )
-        
+
     total_tokens = 5000000000000 // world_size
     num_samples = total_tokens // max_size
     num_batches = num_samples // batch_size
@@ -349,7 +353,7 @@ def train(
         enable_compiler,
         distributed,
         ema,
-        num_tokens_per_batch
+        num_tokens_per_batch,
     )
     # evaluation = Evaluation(model, tokenizer, device)
     for epoch, step, loss, input_ids, output_ids in iteration:
@@ -496,7 +500,7 @@ if __name__ == "__main__":
         "grad_accum": 8,
         "save_every": 10,
         "batch_size": 1,
-        "model_config": DAVID_500M,
+        "model_config": DAVID_100M,
         "warmup_steps": 0,
         "ema": False,
     }
