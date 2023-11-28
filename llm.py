@@ -48,6 +48,7 @@ class LLM(nn.Module):
         self.lm_head = nn.Linear(
             hidden_size * bunch_size, vocab_size, dtype=torch.bfloat16
         )
+        self.lm_nonlinear = nn.Sigmoid()
 
     @property
     def model_config(self):
@@ -94,6 +95,7 @@ class LLM(nn.Module):
         pred_logits = pred_logits.to(dist.get_world_size() - 1)
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
+        pred_logits = self.lm_nonlinear(pred_logits)
 
         loss = F.cross_entropy(
             pred_logits[:, :-1].flatten(0, 1),
@@ -116,13 +118,13 @@ class LLM(nn.Module):
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-
+        pred_logits = self.lm_nonlinear(pred_logits)
         loss = None
         if labels is not None:
-            loss = F.cross_entropy(
-                pred_logits[:, :-1].flatten(0, 1),
-                labels[:, 1:].reshape(-1),
-            )
+            target = labels[:, 1:].reshape(-1, 1)
+            pred = pred_logits[:, :-1].flatten(0, 1)
+            likelihood = pred.gather(target)
+            loss = -torch.log(likelihood).mean()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):
