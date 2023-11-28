@@ -72,6 +72,11 @@ def expoential_lr(
         return max(beta ** (step - warmup_steps - initial_step), min_factor)
 
 
+def grad_accumulation_scheduler(step: int, init_accum_steps: int = 0, last_accum_steps: int=0, rate: float = 0.1):
+    curr_steps = min(last_accum_steps, math.ceil(init_accum_steps + (1+rate) ** step))
+    return curr_steps
+
+
 def step_model(
     device: str,
     dl: DataLoader,
@@ -85,6 +90,7 @@ def step_model(
     enable_compiler: bool = True,
     distributed: bool = False,
     ema: bool = True,
+    num_tokens_per_batch: int = 0,
 ):
     loss = 0
     input_ids = None
@@ -120,31 +126,30 @@ def step_model(
             ),
             log_freq=100,
         )
+    target_num_tokens_per_batch = 1000_000
+    target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
+    schedule_grad_accum = partial(grad_accumulation_scheduler, init_accum_steps=grad_accum, last_accum_steps=target_grad_accum)
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
+            curr_grad_accum = schedule_grad_accum(step)
             optimized_model.train()
             batch = batch.to(device)
             out = optimized_model._pipeline_forward(
                 batch.input_ids, labels=batch.input_ids
             )
-            # with torch.autocast(
-            #    "cuda", torch.float32, enabled=first_descend_stage_ended
-            # ):
-            (out["loss"] / grad_accum).backward()
+
+            (out["loss"] / curr_grad_accum).backward()
             loss = out["loss"].item()
-            # if not first_descend_stage_ended and loss < 4.0:
-            #    first_descend_stage_ended = True
+
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
             if pbar is not None:
                 pbar.set_description(
-                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}"
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {curr_grad_accum}"
                 )
                 pbar.update()
-            if i % grad_accum == 0 and i > 0:
-                # with torch.autocast(
-                #    "cuda", torch.float32, enabled=first_descend_stage_ended
-                # ):
+            if step % curr_grad_accum == 0 and step > 0 and i > 0:
+
                 nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
@@ -325,6 +330,7 @@ def train(
     num_samples = total_tokens // max_size
     num_batches = num_samples // batch_size
     pbar = None
+    num_tokens_per_batch = batch_size * max_size
     if local_rank == 0:
         pbar = tqdm(total=num_batches, dynamic_ncols=True)
         pbar.update(step)
@@ -341,6 +347,7 @@ def train(
         enable_compiler,
         distributed,
         ema,
+        num_tokens_per_batch
     )
     # evaluation = Evaluation(model, tokenizer, device)
     for epoch, step, loss, input_ids, output_ids in iteration:
