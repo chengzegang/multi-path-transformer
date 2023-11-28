@@ -2,7 +2,6 @@ from functools import partial
 import random
 from typing import List, Optional, Tuple, Union
 import torch.distributed as dist
-import bitsandbytes as bnb
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn  # type: ignore
@@ -70,15 +69,16 @@ class LLM(nn.Module):
 
     def _init_pipeline_parallism(self):
         world_size = dist.get_world_size()
-        self.embed_tokens.to(0)
-        self.embed_norm.to(0)
+        devices = list(range(world_size))
+        self.embed_tokens.to(devices[0])
+        self.embed_norm.to(devices[0])
         n_layers_per_device = len(self.decoder.layers) // world_size
         for i in range(world_size):
             self.decoder.layers[
                 i * n_layers_per_device : (i + 1) * n_layers_per_device
-            ].to(i)
-        self.lm_head_norm.to(world_size - 1)
-        self.lm_head.to(world_size - 1)
+            ].to(devices[i])
+        self.lm_head_norm.to(devices[-1])
+        self.lm_head.to(devices[-1])
 
     def _pipeline_forward(
         self,

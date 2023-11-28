@@ -7,7 +7,7 @@ import os
 from functools import partial
 from typing import Optional, Tuple
 import torch.utils.data.datapipes as dp
-import bitsandbytes as bnb
+
 import torch
 import yaml
 from datasets import load_dataset  # type: ignore
@@ -26,7 +26,7 @@ import wandb
 from torch.distributed._tensor import DeviceMesh, Shard, distribute_tensor  # type: ignore
 from torch.distributed.tensor.parallel import parallelize_module, PairwiseParallel  # type: ignore
 from llm import LLM, add_gradient_checkpoint
-from torch_datasets import Pile, Sentence, WebData
+from llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO
@@ -245,7 +245,8 @@ def train(
 
     model = LLM(tokenizer.vocab_size, **model_config)
     tokenizer.save_pretrained(checkpoint_path)
-    print(f"total params: {num_params(model)}")
+    total_params =num_params(model)
+    print(f"total params: {total_params}")
     step = 0
 
     try:
@@ -317,10 +318,11 @@ def train(
         wandb.init(
             # set the wandb project where this run will be logged
             project="llm",
-            name=f"llm-{hostname}-{name}",
+            name=f"llm-{total_params}-{name}",
             # track hyperparameters and run metadata
-            id=f"llm-{hostname}-{name}-{date}",
+            id=f"llm-{total_params}-{name}-{date}",
             resume="allow",
+            reinit=True,
             config={
                 "grad_accum": grad_accum,
                 "dtype": dtype,
@@ -332,7 +334,7 @@ def train(
                 "architecture": "LLM",
                 "dataset": "Pile",
                 "epochs": num_epochs,
-                "num_params": num_params(model),
+                "num_params": total_params,
             },
         )
 
