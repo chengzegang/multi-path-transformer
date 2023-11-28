@@ -1,9 +1,10 @@
-name: 3b
-data_name: webtext
-max_size: 4096
-grad_accum: 16
+root: /scratch/work/public/ml-datasets/pile/train/
+name: greene-3b
+data_name: pile
+max_size: 8192
+grad_accum: 32
 save_every: 10
-batch_size: 2
+batch_size: 1
 warmup_steps: 100
 model_config:
   bunch_size: 16

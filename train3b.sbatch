@@ -14,6 +14,7 @@ export PATH=/usr/local/cuda-12.2/bin:$PATH
 export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/lib32:/usr/local/cuda-12.2/lib64:$LD_LIBRARY_PATH
 export CUDA_HOME=/usr/local/cuda-12.2
 export TORCH_HOME=/scratch/zc2309/multi-path-transformer/torch
+export TRANSFORMERS_CACHE=/scratch/zc2309/multi-path-transformer/torch
 singularity exec --nv \
 	    --overlay /scratch/$USER/containers/overlay.ext3:ro  \
 	    /scratch/work/public/singularity/cuda12.2.2-cudnn8.9.4-devel-ubuntu22.04.3.sif \
