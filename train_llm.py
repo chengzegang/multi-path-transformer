@@ -105,7 +105,6 @@ def step_model(
         optimized_model = parallelize_module(
             optimized_model, mesh, parallelize_plan=PairwiseParallel()
         )
-    # first_descend_stage_ended = False
     avg_model = None
     if ema:
         avg_model = AveragedModel(
