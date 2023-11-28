@@ -9,4 +9,4 @@ torchrun \
     --nproc-per-node=2 \
     --rdzv-backend=c10d \
     --rdzv-endpoint=localhost:0 \
-    cli.py configs/3b.yml
+    cli.py configs/500m.yml
