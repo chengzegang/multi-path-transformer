@@ -110,15 +110,16 @@ def step_model(
         avg_model = AveragedModel(
             model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
         )
-    wandb.watch(
-        (
-            model.embed_tokens,
-            model.decoder.layers[0],
-            model.decoder.layers[len(model.decoder.layers) // 2],
-            model.decoder.layers[-1],
-        ),
-        log_freq=100,
-    )
+    if os.getenv("LOCAL_RANK", "0") == "0":
+        wandb.watch(
+            (
+                model.embed_tokens,
+                model.decoder.layers[0],
+                model.decoder.layers[len(model.decoder.layers) // 2],
+                model.decoder.layers[-1],
+            ),
+            log_freq=100,
+        )
     for epoch in range(num_epochs):
         for i, batch in enumerate(dl):
             optimized_model.train()
@@ -294,27 +295,28 @@ def train(
         print(e)
     hostname = os.uname().nodename
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
-    wandb.init(
-        # set the wandb project where this run will be logged
-        project="llm",
-        name=f"llm-{hostname}",
-        # track hyperparameters and run metadata
-        id=f"llm-{hostname}-{date}",
-        resume="allow",
-        config={
-            "grad_accum": grad_accum,
-            "dtype": dtype,
-            "max_size": max_size,
-            "batch_size": batch_size,
-            "model_config": model_config,
-            "lr": lr,
-            "tokenizer_id": tokenizer_id,
-            "architecture": "LLM",
-            "dataset": "Pile",
-            "epochs": num_epochs,
-            "num_params": num_params(model),
-        },
-    )
+    if os.getenv("LOCAL_RANK", "0") == "0":
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project="llm",
+            name=f"llm-{hostname}",
+            # track hyperparameters and run metadata
+            id=f"llm-{hostname}-{date}",
+            resume="allow",
+            config={
+                "grad_accum": grad_accum,
+                "dtype": dtype,
+                "max_size": max_size,
+                "batch_size": batch_size,
+                "model_config": model_config,
+                "lr": lr,
+                "tokenizer_id": tokenizer_id,
+                "architecture": "LLM",
+                "dataset": "Pile",
+                "epochs": num_epochs,
+                "num_params": num_params(model),
+            },
+        )
     total_tokens = 50000000 * 22 // world_size
     num_samples = total_tokens // max_size
     num_batches = num_samples // batch_size

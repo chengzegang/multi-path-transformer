@@ -1,0 +1,13 @@
+name: ai4ce
+data_name: webtext
+max_size: 1024
+grad_accum: 32
+batch_size: 4
+warmup_steps: 0
+model_config:
+  bunch_size: 16
+  hidden_size: 1024
+  num_layers: 96
+  num_heads: 16
+  head_size: 128
+distributed: true
