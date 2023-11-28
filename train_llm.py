@@ -111,7 +111,7 @@ def step_model(
             model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
         )
     wandb.watch(
-        (``
+        (
             model.embed_tokens,
             model.decoder.layers[0],
             model.decoder.layers[len(model.decoder.layers) // 2],
