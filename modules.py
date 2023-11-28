@@ -223,7 +223,7 @@ class Attention(nn.Module):
 
 class DecoderLayer(nn.Module):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.1
+        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
     ):
         super().__init__()
         self.pre_outer_norm = MSNorm(hidden_size)
@@ -287,7 +287,7 @@ class Decoder(nn.Module):
         num_layers: int = 32,
         num_heads: int = 8,
         head_size: int = 128,
-        dropout: float = 0.2,
+        dropout: float = 0.01,
     ):
         super().__init__()
         self.hidden_size = hidden_size
