@@ -485,7 +485,6 @@ if __name__ == "__main__":
         "batch_size": 1,
         "model_config": DAVID_500M,
         "warmup_steps": 100,
-        "ddp": False,
         "lr": 2e-4,
     }
 
@@ -498,7 +497,6 @@ if __name__ == "__main__":
         "save_every": 10,
         "batch_size": 1,
         "model_config": DAVID_500M,
-        "ddp": True,
         "warmup_steps": 0,
         "ema": False,
     }
