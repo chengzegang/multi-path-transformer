@@ -149,7 +149,7 @@ def step_model(
             output_ids = out["logits"]
             if pbar is not None:
                 pbar.set_description(
-                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {curr_grad_accum}"
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
                 )
                 pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
