@@ -60,16 +60,15 @@ class Evaluation:
 
 
 def expoential_lr(
-    initial_step: int = 0,
     warmup_steps=2000,
     beta: float = 0.95,
     min_factor: float = 0.1,
     step: int = 0,
 ):
-    if step < initial_step + warmup_steps:
-        return max(1e-8, step / (initial_step + warmup_steps))
+    if step < warmup_steps:
+        return max(1e-8, step / (warmup_steps))
     else:
-        return max(beta ** (step - warmup_steps - initial_step), min_factor)
+        return max(beta ** (step - warmup_steps), min_factor)
 
 
 def grad_accumulation_scheduler(
@@ -282,7 +281,7 @@ def train(
             betas=(0.9, 0.999),
         )
 
-    sched = LambdaLR(opt, partial(expoential_lr, step, warmup_steps, 0.99, 0.1))
+    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.99, 0.1))
     data = None
     if data_name == "pile":
         data = Pile(root)
