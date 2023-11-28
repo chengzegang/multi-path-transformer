@@ -79,6 +79,9 @@ def grad_accumulation_scheduler(
     return curr_steps
 
 
+def perplexity(input_ids: Tensor, output_logits: Tensor) -> Tensor:
+    probs = output_logits.gather(-1, input_ids.unsqueeze(-1))
+
 def step_model(
     device: str,
     dl: DataLoader,

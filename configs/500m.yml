@@ -1,9 +1,11 @@
-name: 500m
-data_name: webtext
-max_size: 1024
+root: /scratch/work/public/ml-datasets/pile/train/
+name: greene-500m
+data_name: pile
+max_size: 4096
 grad_accum: 32
-batch_size: 4
+batch_size: 16
 warmup_steps: 0
+lr: 1.0e-4
 model_config:
   bunch_size: 8
   hidden_size: 512
