@@ -320,7 +320,8 @@ def train(
                 "num_params": num_params(model),
             },
         )
-    total_tokens = 50000000 * 22 // world_size
+        
+    total_tokens = 5000000000000 // world_size
     num_samples = total_tokens // max_size
     num_batches = num_samples // batch_size
     pbar = None
