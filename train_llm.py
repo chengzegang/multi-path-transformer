@@ -23,6 +23,8 @@ from transformers import (
     AutoModelForSequenceClassification,
 )  # type:ignore
 import wandb
+from torch.distributed._tensor import DeviceMesh, Shard, distribute_tensor  # type: ignore
+from torch.distributed.tensor.parallel import parallelize_module, PairwiseParallel  # type: ignore
 from llm import LLM, add_gradient_checkpoint
 from torch_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
@@ -34,6 +36,9 @@ import torch._dynamo.config
 
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
+cudnn.allow_tf32 = True
+cuda.matmul.allow_bf16_reduced_precision_reduction = True
+cuda.matmul.allow_tf32 = True
 
 
 class Evaluation:
@@ -77,19 +82,27 @@ def step_model(
     step: int,
     pbar: tqdm,
     enable_compiler: bool = True,
-    ddp: bool = False,
+    distributed: bool = False,
     ema: bool = True,
 ):
     loss = 0
     input_ids = None
     output_ids = None
     optimized_model = optimize_model(model, enable_compiler)
-    if ddp:
-        optimized_model = DDP(
-            optimized_model,
-            [device],
-            gradient_as_bucket_view=True,
-            static_graph=True,
+    if distributed:
+        # optimized_model = DDP(
+        #    optimized_model,
+        #    [device],
+        #    gradient_as_bucket_view=True,
+        #    static_graph=True,
+        # )
+        nnodes = os.getenv("NNODES", 1)
+        nproc_per_node = os.getenv("NPROC-PER-NODE", 1)
+        total_gpus = nnodes * nproc_per_node
+        mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
+        mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
+        optimized_model = parallelize_module(
+            optimized_model, mesh, parallelize_plan=PairwiseParallel()
         )
     # first_descend_stage_ended = False
     avg_model = None
@@ -175,6 +188,7 @@ def partial_load_state_dict(mod: nn.Module, state_dict: OrderedDict) -> nn.Modul
     mod.load_state_dict(mod_state_dict)
     return mod
 
+
 def train(
     root: Optional[str] = None,
     name: str = "default",
@@ -196,14 +210,14 @@ def train(
     device: str = "cuda",
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
-    ddp: bool = False,
+    distributed: bool = False,
     enable_compiler: bool = False,
     warmup_steps: int = 2000,
     ema: bool = True,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
-    if ddp:
+    if distributed:
         torch.cuda.set_device(local_rank)
         dist.init_process_group(backend="nccl", init_method="env://")
     device = torch.device("cuda", local_rank)
@@ -224,12 +238,12 @@ def train(
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
         partial_load_state_dict(model, torch.load(ckpt, mmap=True))
         step = int(ckpt.split("-")[-1].split(".")[0])
-    except Exception as e:
+    except Exception:
         print(f"fail to load ckpt {ckpt}, starting from scratch")
     model = add_gradient_checkpoint(model)
     model = model.to(device).to(dtype)
     opt = None
-    if ddp:
+    if distributed:
         opt = ZRO(
             model.parameters(),
             AdamW,
@@ -317,7 +331,7 @@ def train(
         step,
         pbar,
         enable_compiler,
-        ddp,
+        distributed,
         ema,
     )
     # evaluation = Evaluation(model, tokenizer, device)
@@ -353,6 +367,72 @@ def train(
                 torch.cuda.empty_cache()
 
     pbar.close()
+
+
+def save_checkpoint(
+    path: str,
+    model: LLM,
+    optimizer: Optimizer,
+    scheduler: LambdaLR,
+    step: int,
+    **kwargs,
+):
+    os.makedirs(path, exist_ok=True)
+    state = {
+        "model_config": model.config,
+        "optimizer": optimizer.__class__.__name__,
+        "scheduler": scheduler.__class__.__name__,
+        "optimizer_config": optimizer.defaults,
+        "scheduler_config": scheduler.state_dict(),
+        "step": step,
+        "created_at": datetime.now().strftime("%Y%m%d-%H%M%S"),
+        **kwargs,
+    }
+    with open(os.path.join(path, "checkpoint.yaml"), "w") as f:
+        yaml.dump(state, f)
+    torch.save(model.state_dict(), os.path.join(path, "model.pt"))
+    torch.save(optimizer.state_dict(), os.path.join(path, "optimizer.pt"))
+
+
+def check_mappings(d1: dict, d2: dict) -> bool:
+    if len(d1) != len(d2):
+        return False
+
+    if set(d1.keys()) != set(d2.keys()):
+        return False
+
+    for k, v in d1.items():
+        if k not in d2:
+            return False
+        if isinstance(v, dict):
+            return check_mappings(v, d2[k])
+        else:
+            if v != d2[k]:
+                return False
+    return True
+
+
+def load_checkpoint(
+    path: str, model: LLM, optimizer: Optimizer, scheduler: LambdaLR
+) -> Tuple[LLM, Optimizer, LambdaLR, dict]:
+    state = yaml.full_load(open(os.path.join(path, "checkpoint.yaml")))
+
+    model = LLM(**state["model_config"])
+    try:
+        partial_load_state_dict(model, torch.load(os.path.join(path, "model.pt")))
+    except Exception:
+        pass
+    if check_mappings(state["optimizer_config"], optimizer.defaults):
+        try:
+            optimizer.load_state_dict(torch.load(os.path.join(path, "optimizer.pt")))
+        except Exception:
+            pass
+    if check_mappings(state["scheduler_config"], scheduler.state_dict()):
+        try:
+            scheduler.load_state_dict(torch.load(os.path.join(path, "scheduler.pt")))
+        except Exception:
+            pass
+    return model, optimizer, scheduler, state
 
 
 if __name__ == "__main__":
@@ -402,7 +482,7 @@ if __name__ == "__main__":
         "save_every": 10,
         "batch_size": 1,
         "model_config": DAVID_500M,
-        "ddp": False,
+        "ddp": True,
         "warmup_steps": 0,
         "ema": False,
     }
@@ -412,4 +492,5 @@ if __name__ == "__main__":
         config = local_config
     else:
         config = greene_config
+
     train(**config)

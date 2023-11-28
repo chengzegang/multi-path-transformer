@@ -7,7 +7,7 @@ from torch.utils.checkpoint import checkpoint
 import bitsandbytes as bnb
 
 
-class MPLinear(nn.Module):
+class Linear(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -24,29 +24,27 @@ class MPLinear(nn.Module):
         self.linear.bias.data.zero_()
 
     def forward(self, x: Tensor) -> Tensor:
-        x = x.view(*x.shape[:-1], -1, self.in_features)
-        x = self.linear(x)
-        x = x.flatten(-2)
+        mhx = x.view(*x.shape[:-1], -1, self.in_features)
+        mhx: Tensor = self.linear(mhx)
+        x = mhx.view(*x.shape[:-1], -1)
         return x
 
 
 class MSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, hidden_size: int, eps: float = 1e-6):
         super().__init__()
-        self.dim = dim
+        self.hidden_size = hidden_size
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim, dtype=torch.bfloat16))
+        self.weight = nn.Parameter(torch.ones(hidden_size, dtype=torch.bfloat16))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, L, D = x.shape
-        out_shape = x.shape
-        x = x.reshape(-1, self.dim)
-        x = (
-            x
-            * torch.rsqrt((x**2).mean(dim=-1, keepdim=True) + self.eps)
+        mhx = x.view(-1, self.hidden_size)
+        mhx = (
+            mhx
+            * torch.rsqrt((mhx**2).mean(dim=-1, keepdim=True) + self.eps)
             * self.weight
         )
-        x = x.view(out_shape)
+        x = mhx.view_as(x)
         return x
 
 
@@ -61,15 +59,9 @@ class SwiGLU(nn.Module):
         super().__init__()
         out_features = out_features or in_features
 
-        self.w1 = MPLinear(
-            in_features, hidden_features, bias=bias, dtype=torch.bfloat16
-        )
-        self.w2 = MPLinear(
-            in_features, hidden_features, bias=bias, dtype=torch.bfloat16
-        )
-        self.w3 = MPLinear(
-            hidden_features, in_features, bias=bias, dtype=torch.bfloat16
-        )
+        self.w1 = Linear(in_features, hidden_features, bias=bias, dtype=torch.bfloat16)
+        self.w2 = Linear(in_features, hidden_features, bias=bias, dtype=torch.bfloat16)
+        self.w3 = Linear(hidden_features, in_features, bias=bias, dtype=torch.bfloat16)
 
         self.hidden_features = hidden_features
         self.out_features = out_features
@@ -152,50 +144,42 @@ class Attention(nn.Module):
         self.hidden_size = hidden_size
         self.head_size = head_size
         self.orient = orient
-        self.q_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.k_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.v_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.w_proj = MPLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.out_proj = MPLinear(
-            num_heads * head_size, hidden_size, dtype=torch.bfloat16
-        )
+        self.q_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.k_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.v_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.w_proj = Linear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.out_proj = Linear(num_heads * head_size, hidden_size, dtype=torch.bfloat16)
         self.rotary = RotaryEmbedding(head_size)
         self.nonlinear = nn.SiLU(True)
         # self.compile(fullgraph=True, dynamic=False, mode='max-autotune')
 
     def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
+        hidden_states = hidden_states.view(
+            hidden_states.shape[0],
+            hidden_states.shape[1],
+            -1,
+            self.head_size,
+        )
         if self.orient == "outer":
-            return hidden_states.view(
-                hidden_states.shape[0],
-                hidden_states.shape[1],
-                -1,
-                self.head_size,
-            )
+            return hidden_states
         else:
-            return hidden_states.view(
-                hidden_states.shape[0],
-                hidden_states.shape[1],
-                -1,
-                self.head_size,
-            ).transpose(1, 2)
+            return hidden_states.transpose(1, 2)
 
     def _reshape_scores(self, scores: Tensor) -> Tensor:
         if self.orient == "outer":
-            return scores.contiguous().transpose(1, 2).flatten(-2)
+            return scores.transpose(1, 2).flatten(-2)
         else:
-            return scores.contiguous().flatten(-2)
+            return scores.flatten(-2)
 
     def forward(
         self,
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
-        q, k, v, w = None, None, None, None
-
-        q = self.q_proj(hidden_states)
-        k = self.k_proj(hidden_states)
-        v = self.v_proj(hidden_states)
-        w = self.w_proj(hidden_states)
+        q: Tensor = self.q_proj(hidden_states)
+        k: Tensor = self.k_proj(hidden_states)
+        v: Tensor = self.v_proj(hidden_states)
+        w: Tensor = self.w_proj(hidden_states)
         if key_value_states is not None:
             k_cache, v_cache = key_value_states
             k = torch.cat([k_cache, k], dim=1)
@@ -296,7 +280,7 @@ class Decoder(nn.Module):
                     num_heads=num_heads,
                     head_size=head_size,
                 )
-                for i in range(num_layers)
+                for _ in range(num_layers)
             ]
         )
 

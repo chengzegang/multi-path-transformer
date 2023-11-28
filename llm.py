@@ -10,9 +10,10 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from modules import Attention, Decoder, MSNorm, MPLinear
+from modules import Attention, Decoder, MSNorm, Linear
 import matplotlib
 from transformers import AutoTokenizer
+from enum import Enum
 
 matplotlib.use("Agg")
 
@@ -48,11 +49,17 @@ class LLM(nn.Module):
             hidden_size * bunch_size, vocab_size, dtype=torch.bfloat16
         )
 
-    def enable_gradient_checkpointing(self):
-        self.decoder.enable_gradient_checkpointing()
-
-    def disable_gradient_checkpointing(self):
-        self.decoder.disable_gradient_checkpointing()
+    @property
+    def model_config(self):
+        return {
+            "vocab_size": self.vocab_size,
+            "bunch_size": self.bunch_size,
+            "hidden_size": self.hidden_size,
+            "num_layers": self.num_layers,
+            "num_heads": self.num_heads,
+            "head_size": self.head_size,
+            "padding_idx": self.padding_idx,
+        }
 
     def decode(
         self, input_embeds: Tensor, attn_mask: Optional[Tensor] = None
@@ -141,3 +148,36 @@ def add_gradient_checkpoint(model: LLM):
         layer._org_forward = layer.forward
         layer.forward = partial(_wrapped_forward, layer)
     return model
+
+
+class CasualModel(Enum):
+    DAVID_100M = partial(
+        LLM,
+        **{
+            "bunch_size": 2,
+            "hidden_size": 512,
+            "num_layers": 24,
+            "num_heads": 16,
+            "head_size": 64,
+        }
+    )
+    DAVID_500M = partial(
+        LLM,
+        **{
+            "bunch_size": 8,
+            "hidden_size": 512,
+            "num_layers": 80,
+            "num_heads": 16,
+            "head_size": 64,
+        }
+    )
+    DAVID_3B = partial(
+        LLM,
+        **{
+            "bunch_size": 16,
+            "hidden_size": 1024,
+            "num_layers": 96,
+            "num_heads": 16,
+            "head_size": 128,
+        }
+    )
