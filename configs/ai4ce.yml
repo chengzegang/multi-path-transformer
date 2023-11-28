@@ -11,4 +11,5 @@ model_config:
   num_heads: 16
   head_size: 64
 distributed: false
+num_workers: 1
 ema: false
