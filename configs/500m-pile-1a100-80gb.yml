@@ -10,10 +10,11 @@ lr: 2.0e-4
 num_workers: 1
 model_config:
   bunch_size: 8
+  num_embed_bunch: 8
   hidden_size: 512
   num_layers: 80
   num_heads: 16
   head_size: 64
-distributed: true
+distributed: false
 ema: false
 num_workers: 8

@@ -134,8 +134,9 @@ def step_model(
         last_accum_steps=target_grad_accum,
     )
     curr_grad_accum = grad_accum
+
     for epoch in range(num_epochs):
-        accum_loss = 0
+        accum_loss = []
 
         for i, batch in enumerate(dl):
             
@@ -143,7 +144,7 @@ def step_model(
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
 
-            accum_loss += out["loss"]
+            accum_loss.append(out["loss"])
 
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
@@ -160,7 +161,7 @@ def step_model(
                 opt.zero_grad()
                 sched.step(step)
                 step += 1
-                accum_loss = accum_loss / curr_grad_accum
+                accum_loss = sum(accum_loss) / len(accum_loss)
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = 0
                 curr_grad_accum = schedule_grad_accum(step)
