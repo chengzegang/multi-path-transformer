@@ -133,16 +133,17 @@ def step_model(
         init_accum_steps=grad_accum,
         last_accum_steps=target_grad_accum,
     )
+    curr_grad_accum = grad_accum
     for epoch in range(num_epochs):
         accum_loss = 0
+
         for i, batch in enumerate(dl):
-            curr_grad_accum = schedule_grad_accum(step)
+            
             optimized_model.train()
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
 
-            # (out["loss"] / curr_grad_accum).backward()
-            accum_loss += out["loss"] / curr_grad_accum
+            accum_loss += out["loss"]
 
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
@@ -159,8 +160,10 @@ def step_model(
                 opt.zero_grad()
                 sched.step(step)
                 step += 1
+                accum_loss = accum_loss / curr_grad_accum
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = 0
+                curr_grad_accum = schedule_grad_accum(step)
 
 
 def optimize_model(model: LLM, enabled: bool = True) -> nn.Module:
@@ -362,8 +365,6 @@ def train(
             pbar.write(f"OUT: {out_text[:256]}...")
             wandb.log(
                 {
-                    "in_text": in_text,
-                    "out_text": out_text,
                     "loss": loss,
                     "lr": sched.get_last_lr()[0],
                 },
