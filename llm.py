@@ -85,6 +85,7 @@ class LLM(nn.Module):
         self,
         input_ids: Tensor,
         labels: Tensor,
+        loss_mult_factor: float = 1.0
     ) -> Tensor:
         if not hasattr(self, "_pipeline_initialized"):
             self._init_pipeline_parallism()
@@ -101,8 +102,12 @@ class LLM(nn.Module):
             pl[:, :-1].flatten(0, 1).to(0, non_blocking=True),
             lb[:, 1:].reshape(-1).to(0, non_blocking=True),
         ) for pl, lb in zip(pred_logits, labels)]
-        loss = sum(loss) / len(loss)
-        return {"logits": pred_logits, "loss": loss}
+        total_loss = 0
+        for lo in loss:
+            lo = lo / len(loss)
+            (loss_mult_factor * lo).backward()
+            total_loss += lo
+        return {"logits": pred_logits, "loss": total_loss}
 
     def forward(
         self,
@@ -111,9 +116,10 @@ class LLM(nn.Module):
         past_key_values: Optional[
             List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
         ] = None,
+        loss_mult_factor: float = 1.0
     ):
         if dist.is_initialized() and dist.get_world_size() > 1 and self.training:
-            return self._pipeline_forward(input_ids, labels)
+            return self._pipeline_forward(input_ids, labels, loss_mult_factor)
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
@@ -126,6 +132,7 @@ class LLM(nn.Module):
             target = labels[:, 1:].reshape(-1)
             pred = pred_logits[:, :-1].flatten(0, 1)
             loss = F.cross_entropy(pred, target)
+            (loss * loss_mult_factor).backward()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):

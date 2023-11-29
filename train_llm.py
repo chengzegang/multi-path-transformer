@@ -140,9 +140,7 @@ def step_model(
             curr_grad_accum = schedule_grad_accum(step)
             optimized_model.train()
             batch = batch.to(device)
-            out = optimized_model(batch.input_ids, labels=batch.input_ids)
-
-            (out["loss"] / curr_grad_accum).backward()
+            out = optimized_model(batch.input_ids, labels=batch.input_ids, loss_mult_factor=1 / curr_grad_accum)
             accum_loss += out["loss"] / curr_grad_accum
 
             input_ids = batch["input_ids"]
