@@ -67,47 +67,41 @@ class LLM(nn.Module):
         states = self.decoder(input_embeds, attn_mask=attn_mask)
         return states
 
+    
     def _init_pipeline_parallelism(self):
         world_size = dist.get_world_size()
         devices = list(range(world_size))
-        self.embed_tokens.to(devices[0])
-        self.embed_norm.to(devices[0])
-        n_layers_per_device = len(self.decoder.layers) // world_size + 1
-        for i in range(world_size):
-            self.decoder.layers[
-                i * n_layers_per_device : (i + 1) * n_layers_per_device
-            ].to(devices[i])
-        self.lm_head_norm.to(devices[-1])
-        self.lm_head.to(devices[-1])
-
+        layers = [ self.embed_tokens, self.embed_norm] + [*self.decoder.layers] + [self.lm_head_norm, self.lm_head]
+        chunk_size = len(layers) //world_size + 1
+        for i, ind in enumerate(range(0, len(layers), chunk_size)):
+            for layer in layers[ind: ind + chunk_size]:
+                layer.to(devices[i])
 
     def _pipeline_forward(
         self,
         input_ids: Tensor,
         labels: Tensor,
-        loss_mult_factor: float = 1.0
     ) -> Tensor:
         if not hasattr(self, "_pipeline_initialized"):
             self._init_pipeline_parallelism()
             setattr(self, "_pipeline_initialized", True)
-        input_ids = input_ids.to(0, non_blocking=True)
+        input_ids = input_ids.to(0)
         input_ids = input_ids.split(1)
-        input_embeds = [self.embed_tokens(iid) for iid in input_ids]
-        input_embeds = [self.embed_norm(ieb) for ieb in input_embeds]
-        pred_logits = [ieb.to(dist.get_world_size() - 1, non_blocking=True) for ieb in self.decoder._pipeline_forward(input_embeds)]
-        pred_logits = [self.lm_head_norm(pred) for pred in pred_logits]
-        pred_logits = [self.lm_head(pred) for pred in pred_logits]
-        labels = labels.split(1)
-        loss = [F.cross_entropy(
-            pl[:, :-1].flatten(0, 1).to(0, non_blocking=True),
-            lb[:, 1:].reshape(-1).to(0, non_blocking=True),
-        ) for pl, lb in zip(pred_logits, labels)]
         total_loss = 0
-        for lo in loss:
-            lo = lo / len(loss)
-            (loss_mult_factor * lo).backward()
-            total_loss += lo
-        return {"logits": pred_logits, "loss": total_loss}
+        for i, ipid in enumerate(input_ids):
+            input_embeds = self.embed_tokens(ipid)
+            input_embeds = self.embed_norm(input_embeds)
+            pred_logits = self.decoder._pipeline_forward(input_embeds)
+            pred_logits = pred_logits.to(self.lm_head_norm.weight.device, non_blocking=True)
+            pred_logits = self.lm_head_norm(pred_logits)
+            pred_logits = self.lm_head(pred_logits)
+            loss = F.cross_entropy(
+                pred_logits[:, :-1].flatten(0, 1),
+                labels[i, 1:].reshape(-1).to(pred_logits.device, non_blocking=True),
+            )
+            loss.backward()
+            total_loss += loss
+        return {"logits": pred_logits, "loss": loss}
 
     def forward(
         self,
@@ -116,10 +110,9 @@ class LLM(nn.Module):
         past_key_values: Optional[
             List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
         ] = None,
-        loss_mult_factor: float = 1.0
     ):
         if dist.is_initialized() and dist.get_world_size() > 1 and self.training:
-            return self._pipeline_forward(input_ids, labels, loss_mult_factor)
+            return self._pipeline_forward(input_ids, labels)
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
@@ -132,7 +125,6 @@ class LLM(nn.Module):
             target = labels[:, 1:].reshape(-1)
             pred = pred_logits[:, :-1].flatten(0, 1)
             loss = F.cross_entropy(pred, target)
-            (loss * loss_mult_factor).backward()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):

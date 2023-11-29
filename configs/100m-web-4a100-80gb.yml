@@ -1,0 +1,18 @@
+root: none
+name: webtext-100m
+data_name: webtext
+max_size: 1024
+grad_accum: 1
+batch_size: 64
+save_every: 10
+warmup_steps: 100
+lr: 3.0e-4
+num_workers: 1
+model_config:
+  bunch_size: 2
+  hidden_size: 512
+  num_layers: 24
+  num_heads: 16
+  head_size: 64
+distributed: true
+ema: false

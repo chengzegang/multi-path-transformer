@@ -126,7 +126,7 @@ def step_model(
                 model.decoder.layers[-1],
             ),
         )
-    target_num_tokens_per_batch = 1024 * 1024
+    target_num_tokens_per_batch = 1024 * 4096
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
@@ -140,14 +140,16 @@ def step_model(
             curr_grad_accum = schedule_grad_accum(step)
             optimized_model.train()
             batch = batch.to(device)
-            out = optimized_model(batch.input_ids, labels=batch.input_ids, loss_mult_factor=1 / curr_grad_accum)
+            out = optimized_model(batch.input_ids, labels=batch.input_ids)
+
+            #(out["loss"] / curr_grad_accum).backward()
             accum_loss += out["loss"] / curr_grad_accum
 
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
             if pbar is not None:
                 pbar.set_description(
-                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum + 1:3d}/{curr_grad_accum}"
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
                 )
                 pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
@@ -257,11 +259,9 @@ def train(
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model)
-    model.to(dtype)
-    
+    model = model.to(device).to(dtype)
     opt = None
     if distributed:
-        model._init_pipeline_parallelism()
         opt = ZRO(
             model.parameters(),
             AdamW,
@@ -272,7 +272,6 @@ def train(
             parameters_as_bucket_view=True,
         )
     else:
-        model.to(device)
         opt = AdamW(
             model.parameters(),
             lr=lr,
@@ -390,8 +389,8 @@ def train(
                     )
                 model.eval()
                 torch.save(model.state_dict(), f"models/llm-{step}.pt")
-    if pbar is not None:
-        pbar.close()
+
+    pbar.close()
 
 
 def save_checkpoint(
