@@ -126,7 +126,7 @@ def step_model(
                 model.decoder.layers[-1],
             ),
         )
-    target_num_tokens_per_batch = 1024 * 512
+    target_num_tokens_per_batch = 512 * 512
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
@@ -254,7 +254,7 @@ def train(
         except Exception as e:
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
-        step = int(ckpt.split("-")[-1].split(".")[0])
+        # step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model)

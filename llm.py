@@ -1,4 +1,5 @@
 from functools import partial
+import math
 import random
 from typing import List, Optional, Tuple, Union
 import torch.distributed as dist
@@ -44,8 +45,6 @@ class LLM(nn.Module):
         )
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
-        self.lm_head_norm = MSNorm(hidden_size)
-        self.lm_head = Linear(hidden_size, vocab_size, dtype=torch.bfloat16)
 
     @property
     def model_config(self):
@@ -71,7 +70,7 @@ class LLM(nn.Module):
         layers = (
             [self.embed_tokens, self.embed_norm]
             + [*self.decoder.layers]
-            + [self.lm_head_norm, self.lm_head]
+            + [self.lm_head_norm]
         )
         chunk_size = len(layers) // world_size + 1
         for i, ind in enumerate(range(0, len(layers), chunk_size)):
@@ -97,7 +96,7 @@ class LLM(nn.Module):
             pred_logits = pred_logits.to(
                 self.lm_head_norm.weight.device, non_blocking=True
             )
-            pred_logits = self.lm_head_norm(pred_logits)
+            # pred_logits = self.lm_head_norm(pred_logits)
             pred_logits = (
                 self.lm_head(pred_logits)
                 .view(pred_logits.shape[0], pred_logits.shape[1], -1, self.vocab_size)
@@ -127,12 +126,15 @@ class LLM(nn.Module):
         pred_logits, past_key_values = self.decoder(
             input_embeds, key_value_states=past_key_values
         )
-        pred_logits = self.lm_head_norm(pred_logits)
+        # pred_logits = self.lm_head_norm(pred_logits)
         # pred_logits = self.lm_head(pred_logits)
         pred_logits = pred_logits.view(
             pred_logits.shape[0], pred_logits.shape[1], -1, self.hidden_size
         )
-        pred_logits = pred_logits @ self.embed_tokens.weight.t()
+        pred_logits = torch.log_softmax(
+            pred_logits @ self.embed_tokens.weight.t() / math.sqrt(self.vocab_size),
+            dim=-1,
+        )
         pred_logits = torch.logsumexp(pred_logits, dim=-2)
 
         # mean = pred_logits.mean(dim=-2)
@@ -142,7 +144,7 @@ class LLM(nn.Module):
         if labels is not None:
             target = labels[:, 1:].reshape(-1)
             pred = pred_logits[:, :-1].flatten(0, 1)
-            loss = F.cross_entropy(pred, target)
+            loss = F.nll_loss(pred, target)
             loss.backward()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
