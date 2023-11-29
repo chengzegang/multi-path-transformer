@@ -1,3 +1,4 @@
+
 export OMP_NUM_THREADS=1
 NNODES=1
 NPROC_PER_NODE=$(nvidia-smi -L | wc -l)

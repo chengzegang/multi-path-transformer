@@ -2,12 +2,12 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=32
 #SBATCH --time=168:00:00
 #SBATCH --mem=128GB 
 #SBATCH --gres=gpu:a100:4
-#SBATCH --job-name=mpt
-#SBATCH --output=mpt.out
+#SBATCH --job-name=llm
+#SBATCH --output=llm.out
 
 # To use torch.compile
 export PATH=/usr/local/cuda-12.2/bin:$PATH
