@@ -88,7 +88,7 @@ class LLM(nn.Module):
         loss_mult_factor: float = 1.0
     ) -> Tensor:
         if not hasattr(self, "_pipeline_initialized"):
-            self._init_pipeline_parallism()
+            self._init_pipeline_parallelism()
             setattr(self, "_pipeline_initialized", True)
         input_ids = input_ids.to(0, non_blocking=True)
         input_ids = input_ids.split(1)
