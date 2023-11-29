@@ -272,6 +272,7 @@ def train(
             parameters_as_bucket_view=True,
         )
     else:
+        model.to(device)
         opt = AdamW(
             model.parameters(),
             lr=lr,
