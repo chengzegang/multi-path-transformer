@@ -279,7 +279,7 @@ def train(
             betas=(0.9, 0.999),
         )
 
-    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.99, 0.1))
+    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
     data = None
     if data_name == "pile":
         data = Pile(root)
