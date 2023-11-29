@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --time=168:00:00
 #SBATCH --mem=128GB 
-#SBATCH --gres=gpu:a100:4
+#SBATCH --gres=gpu:a100:2
 #SBATCH --job-name=llm
 #SBATCH --output=llm.out
 
