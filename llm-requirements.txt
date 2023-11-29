@@ -6,7 +6,7 @@ datasets
 sentencepiece
 accelerate
 evaluate
-bitsandbytes
 matplotlib
 jsonlines
 pynvml
+pyarrowy

@@ -18,10 +18,6 @@ class WebData(IterableDataset):
     def __init__(self, **kwargs):
         super().__init__()
 
-    @staticmethod
-    def split_classifier(n):
-        return random.randint(0, 4)
-
     def load_dataset(self):
         # info = get_worker_info()
 

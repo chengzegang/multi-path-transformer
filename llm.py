@@ -72,13 +72,14 @@ class LLM(nn.Module):
         devices = list(range(world_size))
         self.embed_tokens.to(devices[0])
         self.embed_norm.to(devices[0])
-        n_layers_per_device = len(self.decoder.layers) // world_size
+        n_layers_per_device = len(self.decoder.layers) // world_size + 1
         for i in range(world_size):
             self.decoder.layers[
                 i * n_layers_per_device : (i + 1) * n_layers_per_device
             ].to(devices[i])
         self.lm_head_norm.to(devices[-1])
         self.lm_head.to(devices[-1])
+
 
     def _pipeline_forward(
         self,
@@ -89,17 +90,18 @@ class LLM(nn.Module):
             self._init_pipeline_parallism()
             setattr(self, "_pipeline_initialized", True)
         input_ids = input_ids.to(0)
-        input_embeds = self.embed_tokens(input_ids)
-        input_embeds = self.embed_norm(input_embeds)
-        pred_logits = self.decoder._pipeline_forward(input_embeds)
-        pred_logits = pred_logits.to(dist.get_world_size() - 1)
-        pred_logits = self.lm_head_norm(pred_logits)
-        pred_logits = self.lm_head(pred_logits)
-
-        loss = F.cross_entropy(
-            pred_logits[:, :-1].flatten(0, 1),
-            labels[:, 1:].reshape(-1).to(dist.get_world_size() - 1),
-        )
+        input_ids = input_ids.split(1)
+        input_embeds = [self.embed_tokens(iid) for iid in input_ids]
+        input_embeds = [self.embed_norm(ieb) for ieb in input_embeds]
+        pred_logits = [ieb.to(dist.get_world_size() - 1) for ieb in self.decoder._pipeline_forward(input_embeds)]
+        pred_logits = [self.lm_head_norm(pred) for pred in pred_logits]
+        pred_logits = [self.lm_head(pred) for pred in pred_logits]
+        labels = labels.split(1)
+        loss = [F.cross_entropy(
+            pl[:, :-1].flatten(0, 1).to(0),
+            lb[:, 1:].reshape(-1).to(0),
+        ) for pl, lb in zip(pred_logits, labels)]
+        loss = sum(loss) / len(loss)
         return {"logits": pred_logits, "loss": loss}
 
     def forward(

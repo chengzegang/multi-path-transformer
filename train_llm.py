@@ -259,7 +259,8 @@ def train(
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model)
-    model = model.to(device).to(dtype)
+    model.to(dtype)
+    model._init_pipeline_parallism()
     opt = None
     if distributed:
         opt = ZRO(
@@ -389,8 +390,8 @@ def train(
                     )
                 model.eval()
                 torch.save(model.state_dict(), f"models/llm-{step}.pt")
-
-    pbar.close()
+    if pbar is not None:
+        pbar.close()
 
 
 def save_checkpoint(

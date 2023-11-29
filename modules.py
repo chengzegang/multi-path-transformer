@@ -306,8 +306,10 @@ class Decoder(nn.Module):
 
     def _pipeline_forward(self, hidden_states: Tensor) -> Tensor:
         for layer in self.layers:
-            hidden_states = hidden_states.to(layer.pre_outer_norm.weight.device)
-            hidden_states, _ = layer(hidden_states, None)
+                for i, zhs in enumerate(hidden_states):
+                    hs = hs.to(layer.pre_outer_norm.weight.device)
+                    hs, _ = layer(hs, None)
+                    hidden_states[i] = hs
         return hidden_states
 
     def forward(
