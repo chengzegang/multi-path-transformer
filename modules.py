@@ -217,7 +217,7 @@ class Attention(nn.Module):
 
         out = self.out_proj(self.nonlinear(w) * attn_scores)
 
-        return out, (k, v)
+        return out, (k.detach(), v.detach())
 
 
 class DecoderLayer(nn.Module):

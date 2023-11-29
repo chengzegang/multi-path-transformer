@@ -313,6 +313,7 @@ def train(
             # track hyperparameters and run metadata
             id=f"llm-{total_params}-{name}-{date}",
             resume="allow",
+
             config={
                 "grad_accum": grad_accum,
                 "dtype": dtype,
