@@ -89,17 +89,17 @@ class LLM(nn.Module):
         if not hasattr(self, "_pipeline_initialized"):
             self._init_pipeline_parallism()
             setattr(self, "_pipeline_initialized", True)
-        input_ids = input_ids.to(0)
+        input_ids = input_ids.to(0, non_blocking=True)
         input_ids = input_ids.split(1)
         input_embeds = [self.embed_tokens(iid) for iid in input_ids]
         input_embeds = [self.embed_norm(ieb) for ieb in input_embeds]
-        pred_logits = [ieb.to(dist.get_world_size() - 1) for ieb in self.decoder._pipeline_forward(input_embeds)]
+        pred_logits = [ieb.to(dist.get_world_size() - 1, non_blocking=True) for ieb in self.decoder._pipeline_forward(input_embeds)]
         pred_logits = [self.lm_head_norm(pred) for pred in pred_logits]
         pred_logits = [self.lm_head(pred) for pred in pred_logits]
         labels = labels.split(1)
         loss = [F.cross_entropy(
-            pl[:, :-1].flatten(0, 1).to(0),
-            lb[:, 1:].reshape(-1).to(0),
+            pl[:, :-1].flatten(0, 1).to(0, non_blocking=True),
+            lb[:, 1:].reshape(-1).to(0, non_blocking=True),
         ) for pl, lb in zip(pred_logits, labels)]
         loss = sum(loss) / len(loss)
         return {"logits": pred_logits, "loss": loss}
