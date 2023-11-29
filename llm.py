@@ -139,6 +139,7 @@ class LLM(nn.Module):
             target = labels[:, 1:].reshape(-1)
             pred = pred_logits[:, :-1].flatten(0, 1)
             loss = F.cross_entropy(pred, target)
+            loss.backward()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):

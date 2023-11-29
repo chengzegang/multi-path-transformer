@@ -456,7 +456,7 @@ if __name__ == "__main__":
     import torch._dynamo.config  # type: ignore
 
     DAVID_100M = {
-        "bunch_size": 2,
+        "bunch_size": 4,
         "hidden_size": 512,
         "num_layers": 24,
         "num_heads": 16,
@@ -493,10 +493,10 @@ if __name__ == "__main__":
         "root": "/home/caleb/data/pile/train/",
         "name": "local",
         "data_name": "webtext",
-        "max_size": 512,
+        "max_size": 256,
         "grad_accum": 8,
-        "save_every": 10,
-        "batch_size": 8,
+        "save_every": 5,
+        "batch_size": 1,
         "model_config": DAVID_100M,
         "warmup_steps": 0,
         "ema": False,
