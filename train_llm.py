@@ -126,7 +126,7 @@ def step_model(
                 model.decoder.layers[-1],
             ),
         )
-    target_num_tokens_per_batch = 1024 * 4096
+    target_num_tokens_per_batch = 1024 * 1024
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
