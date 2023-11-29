@@ -152,7 +152,7 @@ def step_model(
                 )
                 pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
-                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                nn.utils.clip_grad_value_(model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
                     avg_model.update_parameters(model)
@@ -265,7 +265,7 @@ def train(
             model.parameters(),
             AdamW,
             lr=lr,
-            weight_decay=1e-3,
+            weight_decay=1e-2,
             betas=(0.9, 0.999),
             fused=True,
             parameters_as_bucket_view=True,
@@ -274,12 +274,12 @@ def train(
         opt = AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=1e-3,
+            weight_decay=1e-2,
             fused=True,
             betas=(0.9, 0.999),
         )
 
-    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.99, 0.1))
+    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.9999, 0.1))
     data = None
     if data_name == "pile":
         data = Pile(root)

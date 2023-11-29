@@ -128,12 +128,16 @@ class LLM(nn.Module):
             input_embeds, key_value_states=past_key_values
         )
         pred_logits = self.lm_head_norm(pred_logits)
-        pred_logits = self.lm_head(pred_logits)
-        pred_logits = (
-            self.lm_head(pred_logits)
-            .view(pred_logits.shape[0], pred_logits.shape[1], -1, self.vocab_size)
-            .mean(dim=-2)
+        # pred_logits = self.lm_head(pred_logits)
+        pred_logits = pred_logits.view(
+            pred_logits.shape[0], pred_logits.shape[1], -1, self.hidden_size
         )
+        pred_logits = pred_logits @ self.embed_tokens.weight.t()
+        pred_logits = torch.logsumexp(pred_logits, dim=-2)
+
+        # mean = pred_logits.mean(dim=-2)
+        # var = pred_logits.var(dim=-2)
+        # samples = torch.randn_like(mean) * var + mean
         loss = None
         if labels is not None:
             target = labels[:, 1:].reshape(-1)

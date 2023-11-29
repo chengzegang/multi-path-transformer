@@ -9,6 +9,7 @@ from transformers import AutoTokenizer
 import torch.utils.data.datapipes as dp
 import datasets as ds
 
+
 class WebData(IterableDataset):
     @staticmethod
     def _raw_content_to_text(data: dict):
@@ -21,48 +22,52 @@ class WebData(IterableDataset):
     def load_dataset(self):
         # info = get_worker_info()
 
-        cc = load_dataset(
-            "togethercomputer/RedPajama-Data-V2",
-            name="default",
-            partition="head_middle",
-            snapshots=["2023-06", "2022-49"],
-            languages=["en", "de", "it", "fr", "es"],
-            split="train",
-            streaming=True,
-        ).map(self._raw_content_to_text)
-        en_wiki = load_dataset(
-            "graelo/wikipedia", "20230601.en", split="train", streaming=True
-        ).shuffle()
-
-        zh_wiki = load_dataset(
-            "graelo/wikipedia", "20230601.zh", split="train", streaming=True
-        ).shuffle()
-
-        zh_cc = load_dataset(
-            "uonlp/CulturaX", "zh", split="train", streaming=True
-        ).shuffle()
-
-        ja_wiki = load_dataset(
-            "graelo/wikipedia", "20230601.ja", split="train", streaming=True
-        ).shuffle()
-
-        ja_cc = load_dataset(
-            "uonlp/CulturaX", "ja", split="train", streaming=True
-        ).shuffle()
-
-        dataset = ds.interleave_datasets(
-            [
-                cc,
-                en_wiki,
-                zh_cc,
-                zh_wiki,
-                ja_cc,
-                ja_wiki,
-            ],
-            [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
-            stopping_strategy="all_exhausted",
+        cc = (
+            load_dataset(
+                "togethercomputer/RedPajama-Data-V2",
+                name="default",
+                partition="head_middle",
+                snapshots=["2023-06", "2022-49"],
+                languages=["en"],
+                split="train",
+                streaming=True,
+            )
+            .map(self._raw_content_to_text)
+            .shuffle()
         )
-        return dataset
+        # en_wiki = load_dataset(
+        #    "graelo/wikipedia", "20230601.en", split="train", streaming=True
+        # ).shuffle()
+        #
+        # zh_wiki = load_dataset(
+        #    "graelo/wikipedia", "20230601.zh", split="train", streaming=True
+        # ).shuffle()
+        #
+        # zh_cc = load_dataset(
+        #    "uonlp/CulturaX", "zh", split="train", streaming=True
+        # ).shuffle()
+        #
+        # ja_wiki = load_dataset(
+        #    "graelo/wikipedia", "20230601.ja", split="train", streaming=True
+        # ).shuffle()
+        #
+        # ja_cc = load_dataset(
+        #    "uonlp/CulturaX", "ja", split="train", streaming=True
+        # ).shuffle()
+        #
+        # dataset = ds.interleave_datasets(
+        #    [
+        #        cc,
+        #        en_wiki,
+        #        zh_cc,
+        #        zh_wiki,
+        #        ja_cc,
+        #        ja_wiki,
+        #    ],
+        #    [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
+        #    stopping_strategy="all_exhausted",
+        # )
+        return cc
 
     def __iter__(self):
         for d in self.load_dataset():
