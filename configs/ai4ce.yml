@@ -1,7 +1,7 @@
 name: ai4ce
 data_name: webtext
 max_size: 512
-grad_accum: 32
+grad_accum: 1
 batch_size: 32
 warmup_steps: 0
 model_config:
@@ -12,4 +12,5 @@ model_config:
   head_size: 64
 distributed: false
 num_workers: 1
+lr: 2.0e-4
 ema: false
