@@ -258,9 +258,10 @@ def train(
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model)
     model.to(dtype)
-    model._init_pipeline_parallelism()
+    
     opt = None
     if distributed:
+        model._init_pipeline_parallelism()
         opt = ZRO(
             model.parameters(),
             AdamW,
