@@ -72,7 +72,7 @@ def expoential_lr(
 
 
 def grad_accumulation_scheduler(
-    step: int, init_accum_steps: int = 0, last_accum_steps: int = 0, rate: float = 0.1
+    step: int, init_accum_steps: int = 0, last_accum_steps: int = 0, rate: float = 0.01
 ):
     curr_steps = min(last_accum_steps, math.ceil(init_accum_steps + (1 + rate) ** step))
     return curr_steps
