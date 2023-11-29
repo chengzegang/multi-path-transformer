@@ -67,7 +67,7 @@ class LLM(nn.Module):
         states = self.decoder(input_embeds, attn_mask=attn_mask)
         return states
 
-    def _init_pipeline_parallism(self):
+    def _init_pipeline_parallelism(self):
         world_size = dist.get_world_size()
         devices = list(range(world_size))
         self.embed_tokens.to(devices[0])
