@@ -126,14 +126,13 @@ def step_model(
                 model.decoder.layers[-1],
             ),
         )
-    target_num_tokens_per_batch = 1024 * 4096
+    target_num_tokens_per_batch = 1024 * 512
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
         init_accum_steps=grad_accum,
         last_accum_steps=target_grad_accum,
     )
-    init_step = step
     for epoch in range(num_epochs):
         accum_loss = 0
         for i, batch in enumerate(dl):
@@ -142,7 +141,7 @@ def step_model(
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
 
-            #(out["loss"] / curr_grad_accum).backward()
+            # (out["loss"] / curr_grad_accum).backward()
             accum_loss += out["loss"] / curr_grad_accum
 
             input_ids = batch["input_ids"]
@@ -212,7 +211,7 @@ def train(
     save_every: int = 100,
     grad_accum: int = 2,
     max_size: int = 512,
-    batch_size: int = 8,
+    batch_size: int = 4,
     num_workers: int = 16,
     model_config: dict = {
         "embedding_size": 4096,
@@ -243,7 +242,7 @@ def train(
 
     model = LLM(tokenizer.vocab_size, **model_config)
     tokenizer.save_pretrained(checkpoint_path)
-    total_params =num_params(model)
+    total_params = num_params(model)
     print(f"total params: {total_params}")
     step = 0
 
@@ -305,12 +304,6 @@ def train(
         dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=num_workers
     )
 
-    try:
-        log = yaml.full_load(open(os.path.join(checkpoint_path, "log.yaml")))
-        step = log["step"]
-    except Exception as e:
-        print(e)
-    hostname = os.uname().nodename
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.init(
@@ -500,7 +493,7 @@ if __name__ == "__main__":
         "root": "/home/caleb/data/pile/train/",
         "name": "local",
         "data_name": "webtext",
-        "max_size": 1024,
+        "max_size": 512,
         "grad_accum": 8,
         "save_every": 10,
         "batch_size": 8,

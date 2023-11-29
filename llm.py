@@ -35,19 +35,17 @@ class LLM(nn.Module):
         self.num_layers = num_layers
         self.head_size = head_size
         self.padding_idx = padding_idx
+
         self.embed_tokens = nn.Embedding(
             vocab_size,
-            hidden_size * bunch_size,
+            hidden_size,
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
         self.lm_head_norm = MSNorm(hidden_size)
-        self.lm_head = nn.Linear(
-            hidden_size * bunch_size, vocab_size, dtype=torch.bfloat16
-        )
-        self.lm_nonlinear = nn.Sigmoid()
+        self.lm_head = Linear(hidden_size, vocab_size, dtype=torch.bfloat16)
 
     @property
     def model_config(self):
@@ -67,14 +65,17 @@ class LLM(nn.Module):
         states = self.decoder(input_embeds, attn_mask=attn_mask)
         return states
 
-    
     def _init_pipeline_parallelism(self):
         world_size = dist.get_world_size()
         devices = list(range(world_size))
-        layers = [ self.embed_tokens, self.embed_norm] + [*self.decoder.layers] + [self.lm_head_norm, self.lm_head]
-        chunk_size = len(layers) //world_size + 1
+        layers = (
+            [self.embed_tokens, self.embed_norm]
+            + [*self.decoder.layers]
+            + [self.lm_head_norm, self.lm_head]
+        )
+        chunk_size = len(layers) // world_size + 1
         for i, ind in enumerate(range(0, len(layers), chunk_size)):
-            for layer in layers[ind: ind + chunk_size]:
+            for layer in layers[ind : ind + chunk_size]:
                 layer.to(devices[i])
 
     def _pipeline_forward(
@@ -90,11 +91,18 @@ class LLM(nn.Module):
         total_loss = 0
         for i, ipid in enumerate(input_ids):
             input_embeds = self.embed_tokens(ipid)
+            input_embeds = input_embeds.repeat(1, 1, self.bunch_size)
             input_embeds = self.embed_norm(input_embeds)
             pred_logits = self.decoder._pipeline_forward(input_embeds)
-            pred_logits = pred_logits.to(self.lm_head_norm.weight.device, non_blocking=True)
+            pred_logits = pred_logits.to(
+                self.lm_head_norm.weight.device, non_blocking=True
+            )
             pred_logits = self.lm_head_norm(pred_logits)
-            pred_logits = self.lm_head(pred_logits)
+            pred_logits = (
+                self.lm_head(pred_logits)
+                .view(pred_logits.shape[0], pred_logits.shape[1], -1, self.vocab_size)
+                .mean(dim=-2)
+            )
             loss = F.cross_entropy(
                 pred_logits[:, :-1].flatten(0, 1),
                 labels[i, 1:].reshape(-1).to(pred_logits.device, non_blocking=True),
@@ -114,12 +122,18 @@ class LLM(nn.Module):
         if dist.is_initialized() and dist.get_world_size() > 1 and self.training:
             return self._pipeline_forward(input_ids, labels)
         input_embeds = self.embed_tokens(input_ids)
+        input_embeds = input_embeds.repeat(1, 1, self.bunch_size)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
             input_embeds, key_value_states=past_key_values
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
+        pred_logits = (
+            self.lm_head(pred_logits)
+            .view(pred_logits.shape[0], pred_logits.shape[1], -1, self.vocab_size)
+            .mean(dim=-2)
+        )
         loss = None
         if labels is not None:
             target = labels[:, 1:].reshape(-1)

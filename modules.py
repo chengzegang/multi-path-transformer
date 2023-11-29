@@ -288,6 +288,7 @@ class SyncDecoderLayer(nn.Module):
         hidden_states, _ = self.layer(hidden_states)
         return hidden_states
 
+
 class Decoder(nn.Module):
     def __init__(
         self,
@@ -315,7 +316,10 @@ class Decoder(nn.Module):
 
     def _pipeline_forward(self, hidden_states: Tensor) -> Tensor:
         for layer in self.layers:
-            hidden_states, _ = layer(hidden_states.to(layer.pre_inter_norm.weight.device, non_blocking=True), None)
+            hidden_states, _ = layer(
+                hidden_states.to(layer.pre_inter_norm.weight.device, non_blocking=True),
+                None,
+            )
         return hidden_states
 
     def forward(
@@ -342,7 +346,6 @@ class Decoder(nn.Module):
                 hidden_states, new_kvs = layer(hidden_states, None)
                 new_key_value_states.append(new_kvs)
             return hidden_states, new_key_value_states
-
 
     def to_sequential(self) -> nn.Sequential:
         return nn.Sequential(*[SyncDecoderLayer(layer) for layer in self.layers])
