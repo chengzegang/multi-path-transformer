@@ -62,7 +62,7 @@ class Evaluation:
 def expoential_lr(
     warmup_steps=2000,
     beta: float = 0.95,
-    min_factor: float = 0.1,
+    min_factor: float = 0.01,
     step: int = 0,
 ):
     if step < warmup_steps:
