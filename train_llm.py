@@ -163,7 +163,7 @@ def step_model(
                 step += 1
                 accum_loss = sum(accum_loss) / len(accum_loss)
                 yield epoch, step, accum_loss, input_ids, output_ids
-                accum_loss = 0
+                accum_loss = []
                 curr_grad_accum = schedule_grad_accum(step)
 
 
@@ -258,7 +258,7 @@ def train(
         except Exception as e:
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
-        # step = int(ckpt.split("-")[-1].split(".")[0])
+        step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model)
