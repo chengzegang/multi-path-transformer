@@ -22,17 +22,16 @@ class LLM(nn.Module):
     def __init__(
         self,
         vocab_size: int = 32000,
-        num_embed_bunch: int = 4,
         bunch_size: int = 8,
         hidden_size: int = 512,
         num_layers: int = 80,
         num_heads: int = 8,
         head_size: int = 64,
         padding_idx: int = 0,
+        **kwargs,
     ):
         super().__init__()
         self.vocab_size = vocab_size
-        self.num_embed_bunch = num_embed_bunch
         self.bunch_size = bunch_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -41,14 +40,14 @@ class LLM(nn.Module):
 
         self.embed_tokens = nn.Embedding(
             vocab_size,
-            self.num_embed_bunch * hidden_size,
+            hidden_size,
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
         self.lm_head_norm = MSNorm(hidden_size)
-        self.lm_head = Linear(hidden_size, hidden_size)
+        self.lm_head = Linear(hidden_size, vocab_size)
 
     @property
     def model_config(self):
@@ -125,7 +124,7 @@ class LLM(nn.Module):
         if dist.is_initialized() and dist.get_world_size() > 1 and self.training:
             return self._pipeline_forward(input_ids, labels)
         input_embeds = self.embed_tokens(input_ids)
-        input_embeds = input_embeds.repeat(1, 1, self.bunch_size // self.num_embed_bunch)
+        input_embeds = input_embeds.repeat(1, 1, self.bunch_size)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
             input_embeds, key_value_states=past_key_values
@@ -133,13 +132,8 @@ class LLM(nn.Module):
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
         pred_logits = pred_logits.view(
-            pred_logits.shape[0], pred_logits.shape[1], -1, self.hidden_size * self.num_embed_bunch
-        )
-        pred_logits = torch.log_softmax(
-            pred_logits @ self.embed_tokens.weight.t() / math.sqrt(self.vocab_size),
-            dim=-1,
-        )
-        pred_logits = torch.logsumexp(pred_logits, dim=-2)
+            pred_logits.shape[0], pred_logits.shape[1], -1, self.vocab_size
+        ).mean(dim=-2)
 
         # mean = pred_logits.mean(dim=-2)
         # var = pred_logits.var(dim=-2)
@@ -148,7 +142,7 @@ class LLM(nn.Module):
         if labels is not None:
             target = labels[:, 1:].reshape(-1)
             pred = pred_logits[:, :-1].flatten(0, 1)
-            loss = F.nll_loss(pred, target)
+            loss = F.cross_entropy(pred, target)
             loss.backward()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
