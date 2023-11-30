@@ -1,4 +1,4 @@
-
+CONFIG=$1
 export OMP_NUM_THREADS=1
 NNODES=1
 NPROC_PER_NODE=$(nvidia-smi -L | wc -l)
@@ -10,4 +10,4 @@ torchrun \
     --nproc-per-node=$NPROC_PER_NODE \
     --rdzv-backend=c10d \
     --rdzv-endpoint=localhost:0 \
-    cli.py configs/500m-pile-1a100-80gb.yml
+    cli.py CONFIG
