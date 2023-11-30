@@ -225,7 +225,7 @@ def train(
         total_gpus = nnodes * nproc_per_node
         mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
         mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        rpc.init_rpc(f"worker{local_rank}", rank=local_rank, world_size=world_size)
+        rpc.init_rpc(f"worker", rank=0, world_size=1)
     # if distributed:
     #    torch.cuda.set_device(local_rank)
     #    dist.init_process_group(backend="nccl", init_method="env://")
