@@ -47,7 +47,9 @@ class LLM(nn.Module):
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
         self.lm_head_norm = MSNorm(hidden_size)
-        self.lm_head = nn.Linear(bunch_size * hidden_size, vocab_size)
+        self.lm_head = nn.Linear(
+            bunch_size * hidden_size, vocab_size, dtype=torch.bfloat16
+        )
 
     @property
     def model_config(self):
@@ -96,18 +98,12 @@ class LLM(nn.Module):
             input_embeds = input_embeds.repeat(1, 1, self.bunch_size)
             input_embeds = self.embed_norm(input_embeds)
             pred_logits = self.decoder._pipeline_forward(input_embeds)
-            pred_logits = pred_logits.to(
-                self.lm_head_norm.weight.device, non_blocking=True
-            )
-            # pred_logits = self.lm_head_norm(pred_logits)
-            pred_logits = (
-                self.lm_head(pred_logits)
-                .view(pred_logits.shape[0], pred_logits.shape[1], -1, self.vocab_size)
-                .mean(dim=-2)
-            )
+            pred_logits = self.lm_head_norm(pred_logits)
+            pred_logits = self.lm_head(pred_logits)
+
             loss = F.cross_entropy(
                 pred_logits[:, :-1].flatten(0, 1),
-                labels[i, 1:].reshape(-1).to(pred_logits.device, non_blocking=True),
+                labels[i, 1:].reshape(-1).to(pred_logits.device),
             )
             loss.backward()
             total_loss += loss
@@ -130,9 +126,7 @@ class LLM(nn.Module):
         )
         pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
-        # mean = pred_logits.mean(dim=-2)
-        # var = pred_logits.var(dim=-2)
-        # samples = torch.randn_like(mean) * var + mean
+
         loss = None
         if labels is not None:
             target = labels[:, 1:].reshape(-1)
