@@ -81,7 +81,7 @@ def grad_accumulation_scheduler(
 def step_model(
     device: str,
     dl: DataLoader,
-    model: LLM,
+    proxy_model: LLM,
     opt: Optimizer,
     sched: LambdaLR,
     num_epochs: int,
@@ -96,36 +96,15 @@ def step_model(
     # loss = 0
     input_ids = None
     output_ids = None
-    optimized_model = optimize_model(model, enable_compiler)
-    if distributed:
-        # optimized_model = DDP(
-        #    optimized_model,
-        #    [device],
-        #    gradient_as_bucket_view=True,
-        #    static_graph=True,
-        # )
-        nnodes = int(os.getenv("NNODES", 1))
-        nproc_per_node = int(os.getenv("NPROC_PER_NODE", 1))
-        total_gpus = nnodes * nproc_per_node
-        mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
-        mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        optimized_model = parallelize_module(
-            optimized_model, mesh, parallelize_plan=PairwiseParallel()
-        )
+    proxy_model = optimize_model(proxy_model, enable_compiler)
+
     avg_model = None
     if ema:
         avg_model = AveragedModel(
-            model, device="cpu", avg_fn=get_ema_avg_fn(0.9), use_buffers=True
+            proxy_model, device="cpu", avg_fn=get_ema_avg_fn(0.9), use_buffers=True
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
-        wandb.watch(
-            (
-                model.embed_tokens,
-                model.decoder.layers[0],
-                model.decoder.layers[len(model.decoder.layers) // 2],
-                model.decoder.layers[-1],
-            ),
-        )
+        wandb.watch(proxy_model)
     target_num_tokens_per_batch = 512 * 512
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(
@@ -139,9 +118,9 @@ def step_model(
         accum_loss = []
 
         for i, batch in enumerate(dl):
-            optimized_model.train()
+            proxy_model.train()
             batch = batch.to(device)
-            out = optimized_model(batch.input_ids, labels=batch.input_ids)
+            out = proxy_model(batch.input_ids, labels=batch.input_ids)
 
             accum_loss.append(out["loss"])
 
@@ -153,10 +132,10 @@ def step_model(
                 )
                 pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
-                nn.utils.clip_grad_value_(model.parameters(), 1.0)
+                nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
-                    avg_model.update_parameters(model)
+                    avg_model.update_parameters(proxy_model)
                 opt.zero_grad()
                 sched.step(step)
                 step += 1
@@ -232,9 +211,22 @@ def train(
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
+    mesh = None
     if distributed:
-        torch.cuda.set_device(local_rank)
-        dist.init_process_group(backend="nccl", init_method="env://")
+        # optimized_model = DDP(
+        #    optimized_model,
+        #    [device],
+        #    gradient_as_bucket_view=True,
+        #    static_graph=True,
+        # )
+        nnodes = int(os.getenv("NNODES", 1))
+        nproc_per_node = int(os.getenv("NPROC_PER_NODE", 1))
+        total_gpus = nnodes * nproc_per_node
+        mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
+        mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
+    # if distributed:
+    #    torch.cuda.set_device(local_rank)
+    #    dist.init_process_group(backend="nccl", init_method="env://")
     device = torch.device("cuda", local_rank)
     dtype = getattr(torch, dtype)
 
@@ -243,7 +235,7 @@ def train(
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_id, use_fast=True)
     tokenizer.pad_token = tokenizer.eos_token
 
-    model = LLM(tokenizer.vocab_size, **model_config)
+    model = LLM(tokenizer.vocab_size, **model_config).to(dtype)
     tokenizer.save_pretrained(checkpoint_path)
     total_params = num_params(model)
     print(f"total params: {total_params}")
@@ -261,11 +253,18 @@ def train(
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model)
-    model = model.to(device).to(dtype)
+    proxy_model = None
+    if mesh is not None:
+        proxy_model = parallelize_module(
+            model, mesh, parallelize_plan=PairwiseParallel()
+        )
+        proxy_model = proxy_model.to('cuda')
+    else:
+        proxy_model = model.to(device)
     opt = None
     if distributed:
         opt = ZRO(
-            model.parameters(),
+            proxy_model.parameters(),
             AdamW,
             lr=lr,
             weight_decay=1e-2,
@@ -275,7 +274,7 @@ def train(
         )
     else:
         opt = AdamW(
-            model.parameters(),
+            proxy_model.parameters(),
             lr=lr,
             weight_decay=1e-2,
             fused=True,
@@ -342,7 +341,7 @@ def train(
     iteration = step_model(
         device,
         dl,
-        model,
+        proxy_model,
         opt,
         sched,
         num_epochs,
@@ -371,7 +370,6 @@ def train(
                 step=step,
             )
             if step % save_every == 0 and math.isfinite(loss):
-
                 ckpts = glob.glob("models/llm*.pt")
                 if len(ckpts) > 3:
                     os.remove(
