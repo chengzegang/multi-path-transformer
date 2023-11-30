@@ -40,14 +40,14 @@ class LLM(nn.Module):
 
         self.embed_tokens = nn.Embedding(
             vocab_size,
-            hidden_size*bunch_size,
+            hidden_size * bunch_size,
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
         self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
         self.lm_head_norm = MSNorm(hidden_size)
-        self.lm_head = nn.Linear(bunch_size*hidden_size, vocab_size)
+        self.lm_head = nn.Linear(bunch_size * hidden_size, vocab_size)
 
     @property
     def model_config(self):
@@ -206,7 +206,7 @@ class CasualModel(Enum):
             "num_layers": 24,
             "num_heads": 16,
             "head_size": 64,
-        }
+        },
     )
     DAVID_500M = partial(
         LLM,
@@ -216,7 +216,7 @@ class CasualModel(Enum):
             "num_layers": 80,
             "num_heads": 16,
             "head_size": 64,
-        }
+        },
     )
     DAVID_3B = partial(
         LLM,
@@ -226,5 +226,5 @@ class CasualModel(Enum):
             "num_layers": 96,
             "num_heads": 16,
             "head_size": 128,
-        }
+        },
     )

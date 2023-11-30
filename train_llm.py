@@ -139,7 +139,6 @@ def step_model(
         accum_loss = []
 
         for i, batch in enumerate(dl):
-            
             optimized_model.train()
             batch = batch.to(device)
             out = optimized_model(batch.input_ids, labels=batch.input_ids)
@@ -355,7 +354,7 @@ def train(
         ema,
         num_tokens_per_batch,
     )
-    # evaluation = Evaluation(model, tokenizer, device)
+
     for epoch, step, loss, input_ids, output_ids in iteration:
         if local_rank == 0:
             in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
@@ -372,8 +371,7 @@ def train(
                 step=step,
             )
             if step % save_every == 0 and math.isfinite(loss):
-                # results = evaluation.step(step)
-                # pbar.write(repr(results["mean_perplexity"]))
+
                 ckpts = glob.glob("models/llm*.pt")
                 if len(ckpts) > 3:
                     os.remove(
