@@ -4,7 +4,7 @@ data_name: webtext
 max_size: 512
 grad_accum: 32
 batch_size: 1
-save_every: 10
+save_every: 1000
 warmup_steps: 100
 lr: 2.0e-4
 num_workers: 1
@@ -16,4 +16,4 @@ model_config:
   num_heads: 16
   head_size: 64
 distributed: true
-ema: false
+ema: true

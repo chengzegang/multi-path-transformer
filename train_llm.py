@@ -25,7 +25,7 @@ from transformers import (
 import wandb
 from torch.distributed._tensor import DeviceMesh, Shard, distribute_tensor  # type: ignore
 from torch.distributed.tensor.parallel import parallelize_module, PairwiseParallel  # type: ignore
-from llm import LLM, add_gradient_checkpoint
+from llm import LLM, add_gradient_checkpoint, PipelineLLM
 from llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -34,6 +34,7 @@ import evaluate
 from torch.optim.swa_utils import AveragedModel, get_ema_avg_fn
 import torch._dynamo.config
 from torch.distributed.pipeline.sync import Pipe  # type: ignore
+from torch.distributed import rpc
 
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
@@ -101,11 +102,11 @@ def step_model(
     avg_model = None
     if ema:
         avg_model = AveragedModel(
-            proxy_model, device="cpu", avg_fn=get_ema_avg_fn(0.9), use_buffers=True
+            proxy_model, device="cpu", avg_fn=get_ema_avg_fn(0.99), use_buffers=True
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(proxy_model)
-    target_num_tokens_per_batch = 512 * 512
+    target_num_tokens_per_batch = 512 * 4
     target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
@@ -224,6 +225,7 @@ def train(
         total_gpus = nnodes * nproc_per_node
         mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
         mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
+        rpc.init_rpc(f"worker{local_rank}", rank=local_rank, world_size=world_size)
     # if distributed:
     #    torch.cuda.set_device(local_rank)
     #    dist.init_process_group(backend="nccl", init_method="env://")
@@ -253,12 +255,15 @@ def train(
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model)
+
     proxy_model = None
     if mesh is not None:
+        proxy_model = PipelineLLM.from_llm(model)
+        proxy_model = Pipe(proxy_model, chunks=1)
         proxy_model = parallelize_module(
             model, mesh, parallelize_plan=PairwiseParallel()
         )
-        proxy_model = proxy_model.to('cuda')
+        proxy_model = proxy_model.to("cuda")
     else:
         proxy_model = model.to(device)
     opt = None

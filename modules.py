@@ -279,7 +279,7 @@ class DecoderLayer(nn.Module):
         return residual, key_value_states  # type: ignore
 
 
-class SyncDecoderLayer(nn.Module):
+class PipelineDecoderLayer(nn.Module):
     def __init__(self, layer: DecoderLayer):
         super().__init__()
         self.layer = layer
@@ -347,5 +347,13 @@ class Decoder(nn.Module):
                 new_key_value_states.append(new_kvs)
             return hidden_states, new_key_value_states
 
-    def to_sequential(self) -> nn.Sequential:
-        return nn.Sequential(*[SyncDecoderLayer(layer) for layer in self.layers])
+
+class PipelineDeocder(nn.Module):
+    def __init__(self, decoder: Decoder):
+        super().__init__()
+        self.decoder = decoder
+
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        for layer in self.layers:
+            hidden_states, _ = layer(hidden_states, None)
+        return hidden_states

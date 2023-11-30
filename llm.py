@@ -10,7 +10,7 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from modules import Attention, Decoder, MSNorm, Linear
+from modules import Attention, Decoder, MSNorm, Linear, PipelineDecoderLayer
 import matplotlib
 from transformers import AutoTokenizer
 from enum import Enum
@@ -175,6 +175,18 @@ class LLM(nn.Module):
                 return pred_strings
             yield pred_strings
             input_ids = torch.as_tensor(sample_token_id).view(-1, 1)
+
+
+class PipelineLLM(nn.Sequential):
+    @classmethod
+    def from_llm(cls, llm: LLM):
+        return cls(
+            llm.embed_tokens,
+            llm.embed_norm,
+            *[PipelineDecoderLayer(layer) for layer in llm.decoder.layers],
+            llm.lm_head_norm,
+            llm.lm_head,
+        )
 
 
 def _wrapped_forward(mod: nn.Module, *args, **kwargs):
