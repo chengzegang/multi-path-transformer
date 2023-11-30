@@ -214,21 +214,13 @@ def train(
     world_size = int(os.getenv("WORLD_SIZE", 1))
     mesh = None
     if distributed:
-        # optimized_model = DDP(
-        #    optimized_model,
-        #    [device],
-        #    gradient_as_bucket_view=True,
-        #    static_graph=True,
-        # )
         nnodes = int(os.getenv("NNODES", 1))
         nproc_per_node = int(os.getenv("NPROC_PER_NODE", 1))
         total_gpus = nnodes * nproc_per_node
         mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
         mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        rpc.init_rpc(f"worker", rank=0, world_size=1)
-    # if distributed:
-    #    torch.cuda.set_device(local_rank)
-    #    dist.init_process_group(backend="nccl", init_method="env://")
+        rpc.init_rpc("worker", rank=0, world_size=1)
+
     device = torch.device("cuda", local_rank)
     dtype = getattr(torch, dtype)
 
