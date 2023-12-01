@@ -26,7 +26,12 @@ from transformers import (
 )  # type:ignore
 import wandb
 from torch.distributed._tensor import DeviceMesh, Shard, distribute_tensor  # type: ignore
-from torch.distributed.tensor.parallel import parallelize_module, ColwiseParallel, PairwiseParallel  # type: ignore
+from torch.distributed.tensor.parallel import (
+    parallelize_module,
+    ColwiseParallel,
+    PairwiseParallel,
+)
+from ddp import DistributedModule  # type: ignore
 from llm import LLM, add_gradient_checkpoint, PipelineLLM
 from llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
@@ -119,7 +124,7 @@ def step_model(
         last_accum_steps=target_grad_accum,
     )
     curr_grad_accum = grad_accum
-
+    handle = None
     for epoch in range(num_epochs):
         accum_loss = []
 
@@ -143,10 +148,15 @@ def step_model(
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
                 opt.zero_grad()
+                if distributed:
+                    if handle is not None:
+                        handle.wait()
+                    for p in proxy_model.parameters():
+                        handle = dist.all_reduce(p, op=dist.ReduceOp.AVG)
                 sched.step(step)
                 step += 1
                 accum_loss = sum(accum_loss) / len(accum_loss)
-                #dist.barrier()
+                # dist.barrier()
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = []
                 curr_grad_accum = schedule_grad_accum(step)
@@ -212,7 +222,7 @@ def train(
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     distributed: bool = False,
-    enable_compiler: bool = True,
+    enable_compiler: bool = False,
     warmup_steps: int = 100,
     ema: bool = True,
 ):
@@ -225,16 +235,18 @@ def train(
     print(
         f"world_size: {world_size}, local_world_size: {local_world_size}, num_nodes: {num_nodes}, num_workers: {num_workers}"
     )
-    mesh = None
+    # mesh = None
     if distributed:
-        total_gpus = num_nodes * local_world_size
-        mesh_assign = torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
+        # total_gpus = num_nodes * local_world_size
+        # mesh_assign = (
+        #    torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
+        # )
         torch.cuda.set_device(local_rank)
         os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
-        dist.init_process_group('nccl')
-        #mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        #tmp = tempfile.NamedTemporaryFile(delete=False)
-        #rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
+        dist.init_process_group("nccl")
+        # mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
+        # tmp = tempfile.NamedTemporaryFile(delete=False)
+        # rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
         #        init_method="file://{}".format(tmp.name)
         #    ))
 
@@ -266,13 +278,13 @@ def train(
 
     proxy_model = None
     if distributed:
-        #proxy_model = PipelineLLM.from_llm(model)
-        #proxy_model = parallelize_module(
+        # proxy_model = PipelineLLM.from_llm(model)
+        # proxy_model = parallelize_module(
         #    model, mesh, parallelize_plan=PairwiseParallel()
-        #)
+        # )
         model = model.to(device)
-        #pre_dp_module_transform(proxy_model)
-        proxy_model = DDP(model, gradient_as_bucket_view=True, static_graph=True)
+        # pre_dp_module_transform(proxy_model)
+        proxy_model = model
     else:
         proxy_model = model.to(device)
     opt = None
