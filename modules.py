@@ -29,14 +29,14 @@ class Linear(nn.Module):
         return x
 
 
-class MSNorm(torch.nn.Module):
+class MSNorm(nn.Module):
     def __init__(self, hidden_size: int, eps: float = 1e-6):
         super().__init__()
         self.hidden_size = hidden_size
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(hidden_size, dtype=torch.bfloat16))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         mhx = x.view(-1, self.hidden_size)
         mhx = (
             mhx
@@ -66,7 +66,7 @@ class SwiGLU(nn.Module):
         self.out_features = out_features
         self.in_features = in_features
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Computes :attr:`swiglu` with the module's weights
 
         Args:
@@ -117,7 +117,7 @@ class RotaryEmbedding(torch.nn.Module):
         self.register_buffer("_cos_cached", _cos_cached, persistent=False)
         self.register_buffer("_sin_cached", s_sin_cached, persistent=False)
 
-    def _update_cos_sin_tables(self, seq_len) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _update_cos_sin_tables(self, seq_len: int) -> Tuple[torch.Tensor, torch.Tensor]:
         t = torch.arange(seq_len, dtype=torch.bfloat16, requires_grad=False)
         freqs = torch.einsum("i,j->ij", t, self.inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
@@ -314,14 +314,6 @@ class Decoder(nn.Module):
             ]
         )
 
-    def _pipeline_forward(self, hidden_states: Tensor) -> Tensor:
-        for layer in self.layers:
-            hidden_states, _ = layer(
-                hidden_states.to(layer.pre_inter_norm.weight.device, non_blocking=True),
-                None,
-            )
-        return hidden_states
-
     def forward(
         self,
         hidden_states: Tensor,
@@ -346,14 +338,3 @@ class Decoder(nn.Module):
                 hidden_states, new_kvs = layer(hidden_states, None)
                 new_key_value_states.append(new_kvs)
             return hidden_states, new_key_value_states
-
-
-class PipelineDeocder(nn.Module):
-    def __init__(self, decoder: Decoder):
-        super().__init__()
-        self.decoder = decoder
-
-    def forward(self, hidden_states: Tensor) -> Tensor:
-        for layer in self.layers:
-            hidden_states, _ = layer(hidden_states, None)
-        return hidden_states

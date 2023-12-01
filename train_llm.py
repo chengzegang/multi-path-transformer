@@ -26,7 +26,7 @@ from transformers import (
 )  # type:ignore
 import wandb
 from torch.distributed._tensor import DeviceMesh, Shard, distribute_tensor  # type: ignore
-from torch.distributed.tensor.parallel import parallelize_module,ColwiseParallel, PairwiseParallel  # type: ignore
+from torch.distributed.tensor.parallel import parallelize_module, ColwiseParallel, PairwiseParallel  # type: ignore
 from llm import LLM, add_gradient_checkpoint, PipelineLLM
 from llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
@@ -110,7 +110,9 @@ def step_model(
         wandb.watch(proxy_model)
     target_num_tokens_per_batch = 1024 * 512
     world_size = int(os.getenv("WORLD_SIZE", 1))
-    target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch // world_size
+    target_grad_accum = (
+        target_num_tokens_per_batch // num_tokens_per_batch // world_size
+    )
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
         init_accum_steps=grad_accum,
@@ -136,7 +138,6 @@ def step_model(
                 )
                 pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
-                
                 nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
@@ -154,9 +155,9 @@ def step_model(
 def optimize_model(model: LLM, enabled: bool = True) -> nn.Module:
     proxy_model = model
     if enabled:
-        proxy_model = torch.compile(model, mode="reduce-overhead")
-    # proxy_model = mesh_model(model)
-    # proxy_model = model
+        proxy_model = torch.compile(
+            model, fullgraph=True, dynamic=False, mode="max-autotune"
+        )
     return proxy_model
 
 
@@ -211,7 +212,7 @@ def train(
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     distributed: bool = False,
-    enable_compiler: bool = False,
+    enable_compiler: bool = True,
     warmup_steps: int = 100,
     ema: bool = True,
 ):
@@ -220,15 +221,19 @@ def train(
     local_world_size = int(os.getenv("LOCAL_WORLD_SIZE", 1))
     num_nodes = world_size // local_world_size
     num_workers = int(os.getenv("NUM_WORKERS", num_workers or 4)) // local_world_size
-    
-    print(f'world_size: {world_size}, local_world_size: {local_world_size}, num_nodes: {num_nodes}, num_workers: {num_workers}')
+
+    print(
+        f"world_size: {world_size}, local_world_size: {local_world_size}, num_nodes: {num_nodes}, num_workers: {num_workers}"
+    )
     mesh = None
     if distributed:
         total_gpus = num_nodes * local_world_size
-        mesh_assign = torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
+        mesh_assign = (
+            torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
+        )
         mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        #tmp = tempfile.NamedTemporaryFile(delete=False)
-        #rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
+        # tmp = tempfile.NamedTemporaryFile(delete=False)
+        # rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
         #        init_method="file://{}".format(tmp.name)
         #    ))
 
@@ -268,7 +273,6 @@ def train(
         pre_dp_module_transform(proxy_model)
         proxy_model = DDP(proxy_model, gradient_as_bucket_view=True, static_graph=True)
     else:
-        
         proxy_model = model.to(device)
     opt = None
     if distributed:
@@ -312,7 +316,10 @@ def train(
         return inputs
 
     dl = DataLoader(
-        dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=num_workers // world_size
+        dataset,
+        batch_size=batch_size,
+        collate_fn=collate_fn,
+        num_workers=num_workers // world_size,
     )
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -456,4 +463,3 @@ def load_checkpoint(
         except Exception:
             pass
     return model, optimizer, scheduler, state
-
