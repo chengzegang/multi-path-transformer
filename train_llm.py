@@ -366,7 +366,7 @@ def train(
     num_tokens_per_batch = batch_size * max_size
     if local_rank == 0:
         pbar = tqdm(total=num_batches, dynamic_ncols=True, unit_scale=True)
-        pbar.update(step)
+        pbar.update(step * 512 * 1024 * world_size)
     iteration = step_model(
         device,
         dl,
