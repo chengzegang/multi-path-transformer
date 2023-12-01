@@ -146,7 +146,7 @@ def step_model(
                 sched.step(step)
                 step += 1
                 accum_loss = sum(accum_loss) / len(accum_loss)
-                dist.barrier()
+                #dist.barrier()
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = []
                 curr_grad_accum = schedule_grad_accum(step)
@@ -228,12 +228,13 @@ def train(
     mesh = None
     if distributed:
         total_gpus = num_nodes * local_world_size
-        mesh_assign = (
-            torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
-        )
-        mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        # tmp = tempfile.NamedTemporaryFile(delete=False)
-        # rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
+        mesh_assign = torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
+        torch.cuda.set_device(local_rank)
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
+        dist.init_process_group('nccl')
+        #mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
+        #tmp = tempfile.NamedTemporaryFile(delete=False)
+        #rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
         #        init_method="file://{}".format(tmp.name)
         #    ))
 
@@ -264,14 +265,14 @@ def train(
         print("fail to load a checkpoint, starting from scratch")
 
     proxy_model = None
-    if mesh is not None:
-        proxy_model = PipelineLLM.from_llm(model)
-        proxy_model = parallelize_module(
-            model, mesh, parallelize_plan=PairwiseParallel()
-        )
-        proxy_model = proxy_model.cuda()
-        pre_dp_module_transform(proxy_model)
-        proxy_model = DDP(proxy_model, gradient_as_bucket_view=True, static_graph=True)
+    if distributed:
+        #proxy_model = PipelineLLM.from_llm(model)
+        #proxy_model = parallelize_module(
+        #    model, mesh, parallelize_plan=PairwiseParallel()
+        #)
+        model = model.to(device)
+        #pre_dp_module_transform(proxy_model)
+        proxy_model = DDP(model, gradient_as_bucket_view=True, static_graph=True)
     else:
         proxy_model = model.to(device)
     opt = None

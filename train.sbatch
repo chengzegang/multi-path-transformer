@@ -23,11 +23,6 @@ name=$(echo $1 | cut -d '-' -f1 -)
 node1=$(echo $1 | cut -d '-' -f2 - | tr -d '[')
 
 export NUM_WORKERS=$SLURM_JOB_CPUS_PER_NODE
-
-# find all jobs named $name
-export JOBS=$(squeue -u $USER -o "%.100j" | grep $name | wc -l)
-# get earliest job id
-export JOB_ID=$(squeue -u $USER -o "%.100j" | grep $name | head -n1 | cut -d ' ' -f1 -)
 #export MASTER_ADDR=ga019
 export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n1)
 export OMP_NUM_THREADS=1
@@ -43,7 +38,7 @@ singularity exec --nv \
 		torchrun \\
     		--rdzv-id=$SLURM_JOB_ID \\
     		--nnodes=$SLURM_JOB_NUM_NODES \\
-    		--nproc-per-node=$SLURM_TASKS_PER_NODE \\
+    		--nproc-per-node=4 \\
     		--rdzv-backend=c10d \\
     		--rdzv-endpoint=$MASTER_ADDR \\
     		--max-restarts=3 \\
