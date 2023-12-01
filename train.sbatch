@@ -7,8 +7,8 @@
 #SBATCH --time=48:00:00
 #SBATCH --mem=490GB 
 #SBATCH --gres=gpu:a100:4
-#SBATCH --job-name=llm
-#SBATCH --output=llm.out
+#SBATCH --job-name=llm2
+#SBATCH --output=llm2.out
 
 # To use torch.compile
 
