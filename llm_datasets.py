@@ -74,7 +74,7 @@ class WebData(IterableDataset):
             yield {"text": d["text"]}
 
 
-class Jsonlines(IterableDataset):
+class Jsonlines(IterDataPipe):
     def __init__(self, path: str):
         super().__init__()
         self.path = path
@@ -85,7 +85,7 @@ class Jsonlines(IterableDataset):
                 yield line
 
 
-class Pile_(IterableDataset):
+class Pile_(IterDataPipe):
     def __init__(self, root: str):
         super().__init__()
         self.root = root
@@ -105,16 +105,16 @@ class Pile_(IterableDataset):
 class Pile(IterDataPipe):
     def __init__(self, root: str):
         super().__init__()
-        self.data = dp.iter.IterableWrapper(Pile_(root)).shuffle().sharding_filter()
+        self.data = Pile_(root)
 
     def __iter__(self):
         for d in self.data:
             yield {"text": d["text"]}
 
 
-class Sentence(IterableDataset):
+class Sentence(IterDataPipe):
     def __init__(
-        self, dataset: IterableDataset, max_size: int, tokenizer: AutoTokenizer
+        self, dataset: IterDataPipe, max_size: int, tokenizer: AutoTokenizer
     ):
         self.tokenizer = tokenizer
         # self.data = load_dataset("c4", "en", split="train", streaming=True).shuffle()

@@ -8,6 +8,8 @@ from functools import partial
 from typing import Optional, Tuple
 import torch.utils.data.datapipes as dp
 
+from torch.distributed.tensor.parallel.ddp import pre_dp_module_transform
+import tempfile
 import torch
 import yaml
 from datasets import load_dataset  # type: ignore
@@ -24,7 +26,7 @@ from transformers import (
 )  # type:ignore
 import wandb
 from torch.distributed._tensor import DeviceMesh, Shard, distribute_tensor  # type: ignore
-from torch.distributed.tensor.parallel import parallelize_module, PairwiseParallel  # type: ignore
+from torch.distributed.tensor.parallel import parallelize_module,ColwiseParallel, PairwiseParallel  # type: ignore
 from llm import LLM, add_gradient_checkpoint, PipelineLLM
 from llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
@@ -106,8 +108,9 @@ def step_model(
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(proxy_model)
-    target_num_tokens_per_batch = 512 * 4
-    target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch
+    target_num_tokens_per_batch = 1024 * 512
+    world_size = int(os.getenv("WORLD_SIZE", 1))
+    target_grad_accum = target_num_tokens_per_batch // num_tokens_per_batch // world_size
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
         init_accum_steps=grad_accum,
@@ -133,6 +136,7 @@ def step_model(
                 )
                 pbar.update()
             if i % curr_grad_accum == 0 and i > 0:
+                
                 nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
@@ -141,6 +145,7 @@ def step_model(
                 sched.step(step)
                 step += 1
                 accum_loss = sum(accum_loss) / len(accum_loss)
+                dist.barrier()
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = []
                 curr_grad_accum = schedule_grad_accum(step)
@@ -212,14 +217,20 @@ def train(
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
+    local_world_size = int(os.getenv("LOCAL_WORLD_SIZE", 1))
+    num_nodes = world_size // local_world_size
+    num_workers = int(os.getenv("NUM_WORKERS", num_workers or 4)) // local_world_size
+    
+    print(f'world_size: {world_size}, local_world_size: {local_world_size}, num_nodes: {num_nodes}, num_workers: {num_workers}')
     mesh = None
     if distributed:
-        nnodes = int(os.getenv("NNODES", 1))
-        nproc_per_node = int(os.getenv("NPROC_PER_NODE", 1))
-        total_gpus = nnodes * nproc_per_node
-        mesh_assign = torch.arange(total_gpus).reshape(nnodes, nproc_per_node).tolist()
+        total_gpus = num_nodes * local_world_size
+        mesh_assign = torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
         mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        rpc.init_rpc("worker", rank=0, world_size=1)
+        #tmp = tempfile.NamedTemporaryFile(delete=False)
+        #rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
+        #        init_method="file://{}".format(tmp.name)
+        #    ))
 
     device = torch.device("cuda", local_rank)
     dtype = getattr(torch, dtype)
@@ -246,17 +257,18 @@ def train(
         step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
-    model = add_gradient_checkpoint(model)
 
     proxy_model = None
     if mesh is not None:
         proxy_model = PipelineLLM.from_llm(model)
-        proxy_model = Pipe(proxy_model, chunks=1)
         proxy_model = parallelize_module(
             model, mesh, parallelize_plan=PairwiseParallel()
         )
-        proxy_model = proxy_model.to("cuda")
+        proxy_model = proxy_model.cuda()
+        pre_dp_module_transform(proxy_model)
+        proxy_model = DDP(proxy_model, gradient_as_bucket_view=True, static_graph=True)
     else:
+        
         proxy_model = model.to(device)
     opt = None
     if distributed:
@@ -300,7 +312,7 @@ def train(
         return inputs
 
     dl = DataLoader(
-        dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=num_workers
+        dataset, batch_size=batch_size, collate_fn=collate_fn, num_workers=num_workers // world_size
     )
 
     date = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -445,61 +457,3 @@ def load_checkpoint(
             pass
     return model, optimizer, scheduler, state
 
-
-if __name__ == "__main__":
-    import torch._dynamo.config  # type: ignore
-
-    DAVID_100M = {
-        "bunch_size": 4,
-        "hidden_size": 512,
-        "num_layers": 24,
-        "num_heads": 16,
-        "head_size": 64,
-    }
-    DAVID_500M = {
-        "bunch_size": 8,
-        "hidden_size": 512,
-        "num_layers": 80,
-        "num_heads": 16,
-        "head_size": 64,
-    }
-    DAVID_3B = {
-        "bunch_size": 16,
-        "hidden_size": 1024,
-        "num_layers": 96,
-        "num_heads": 16,
-        "head_size": 128,
-    }
-    greene_config = {
-        "root": "/scratch/work/public/ml-datasets/pile/train/",
-        "name": "greene",
-        "data_name": "pile",
-        "max_size": 4096,
-        "grad_accum": 32,
-        "save_every": 10,
-        "batch_size": 1,
-        "model_config": DAVID_500M,
-        "warmup_steps": 100,
-        "lr": 2e-4,
-    }
-
-    local_config = {
-        "root": "/home/caleb/data/pile/train/",
-        "name": "local",
-        "data_name": "webtext",
-        "max_size": 256,
-        "grad_accum": 8,
-        "save_every": 5,
-        "batch_size": 1,
-        "model_config": DAVID_100M,
-        "warmup_steps": 0,
-        "ema": False,
-    }
-    host = os.uname().nodename
-    config = None
-    if host == "LPC":
-        config = local_config
-    else:
-        config = greene_config
-
-    train(**config)
