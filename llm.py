@@ -69,46 +69,6 @@ class LLM(nn.Module):
         states = self.decoder(input_embeds, attn_mask=attn_mask)
         return states
 
-    def _init_pipeline_parallelism(self):
-        world_size = dist.get_world_size()
-        devices = list(range(world_size))
-        layers = (
-            [self.embed_tokens, self.embed_norm]
-            + [*self.decoder.layers]
-            + [self.lm_head_norm]
-        )
-        chunk_size = len(layers) // world_size + 1
-        for i, ind in enumerate(range(0, len(layers), chunk_size)):
-            for layer in layers[ind : ind + chunk_size]:
-                layer.to(devices[i])
-
-    def _pipeline_forward(
-        self,
-        input_ids: Tensor,
-        labels: Tensor,
-    ) -> Tensor:
-        if not hasattr(self, "_pipeline_initialized"):
-            self._init_pipeline_parallelism()
-            setattr(self, "_pipeline_initialized", True)
-        input_ids = input_ids.to(0)
-        input_ids = input_ids.split(1)
-        total_loss = 0
-        for i, ipid in enumerate(input_ids):
-            input_embeds = self.embed_tokens(ipid)
-            input_embeds = input_embeds.repeat(1, 1, self.bunch_size)
-            input_embeds = self.embed_norm(input_embeds)
-            pred_logits = self.decoder._pipeline_forward(input_embeds)
-            pred_logits = self.lm_head_norm(pred_logits)
-            pred_logits = self.lm_head(pred_logits)
-
-            loss = F.cross_entropy(
-                pred_logits[:, :-1].flatten(0, 1),
-                labels[i, 1:].reshape(-1).to(pred_logits.device),
-            )
-            loss.backward()
-            total_loss += loss
-        return {"logits": pred_logits, "loss": loss}
-
     def forward(
         self,
         input_ids: Tensor,
@@ -117,8 +77,6 @@ class LLM(nn.Module):
             List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
         ] = None,
     ):
-        if dist.is_initialized() and dist.get_world_size() > 1 and self.training:
-            return self._pipeline_forward(input_ids, labels)
         input_embeds = self.embed_tokens(input_ids)
         input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
