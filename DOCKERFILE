@@ -1,0 +1,42 @@
+# Use the latest NVIDIA CUDA image
+FROM nvidia/cuda:latest
+RUN mkdir /workspace
+COPY . /workspace
+# Set a working directory
+WORKDIR /workspace
+
+# Install basic dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    git \
+    gh \
+    git-lfs \
+    bzip2 \
+    ca-certificates \
+    libglib2.0-0 \
+    libxext6 \
+    libsm6 \
+    ffmpeg \
+    libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install Mambaforge
+RUN wget https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh -O mambaforge.sh \
+    && bash mambaforge.sh -b -p /opt/mambaforge \
+    && rm mambaforge.sh
+
+# Add Mambaforge to PATH
+ENV PATH /opt/mambaforge/bin:$PATH
+
+# Create a new environment and install PyTorch and other DL libraries
+# Replace 'cudatoolkit=xx.x' with the version compatible with your CUDA version
+RUN mamba create -n dl-env python=3.11 \
+    && mamba install -n dl-env pytorch torchvision torchaudio cudatoolkit=12.1 -c pytorch \
+    && mamba install -n dl-env numpy tensorboard wandb pyarrow tensordict timm transformers datasets accelerate diffusers ipykernel pandas matplotlib scikit-learn jupyterlab -c conda-forge \
+    && pip install opencv-python 
+
+# Activate the environment
+SHELL ["conda", "run", "-n", "dl-env", "/bin/bash", "-c"]
+
+## The command to run when the container starts
+#CMD ["jupyter", "lab", "--ip=0.0.0.0", "--allow-root", "--no-browser"]
