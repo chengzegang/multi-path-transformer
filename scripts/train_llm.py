@@ -233,20 +233,12 @@ def train(
     print(
         f"world_size: {world_size}, local_world_size: {local_world_size}, num_nodes: {num_nodes}, num_workers: {num_workers}"
     )
-    # mesh = None
+
     if distributed:
-        # total_gpus = num_nodes * local_world_size
-        # mesh_assign = (
-        #    torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
-        # )
+
         torch.cuda.set_device(local_rank)
         os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
         dist.init_process_group("nccl")
-        # mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        # tmp = tempfile.NamedTemporaryFile(delete=False)
-        # rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
-        #        init_method="file://{}".format(tmp.name)
-        #    ))
 
     device = torch.device("cuda", local_rank)
     dtype = getattr(torch, dtype)
@@ -276,13 +268,9 @@ def train(
 
     proxy_model = None
     if distributed:
-        # proxy_model = PipelineLLM.from_llm(model)
-        # proxy_model = parallelize_module(
-        #    model, mesh, parallelize_plan=PairwiseParallel()
-        # )
+
         model = model.to(device)
         proxy_model = DDP(model, gradient_as_bucket_view=True, static_graph=True)
-        # pre_dp_module_transform(proxy_model)
     else:
         proxy_model = model.to(device)
 
@@ -339,10 +327,10 @@ def train(
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.init(
             # set the wandb project where this run will be logged
-            project="llm",
-            name=f"llm-{total_params}-{name}-{date}",
+            project="multi-path-llm",
+            name=f"{total_params}-{name}-{date}",
             # track hyperparameters and run metadata
-            id=f"llm-{total_params}-{name}-{date}",
+            id=f"{total_params}-{name}-{date}",
             resume="allow",
             config={
                 "grad_accum": grad_accum,
