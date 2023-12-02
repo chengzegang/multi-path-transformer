@@ -78,21 +78,20 @@ class LLM(nn.Module):
         ] = None,
     ):
         pred_logits = None
+        loss = None
         if self.training:
             pred_logits = self._forward(input_ids)
+            if labels is not None:
+                target = labels[:, 1:].reshape(-1)
+                pred = pred_logits[:, :-1].flatten(0, 1)
+                loss = F.cross_entropy(pred, target)
+                loss.backward()
         else:
             input_embeds = self.embed_tokens(input_ids)
             pred_logits, past_key_values = self.decoder(
                 input_embeds, key_value_states=past_key_values
             )
             pred_logits = self.lm_head(pred_logits)
-
-        loss = None
-        if labels is not None:
-            target = labels[:, 1:].reshape(-1)
-            pred = pred_logits[:, :-1].flatten(0, 1)
-            loss = F.cross_entropy(pred, target)
-            loss.backward()
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):

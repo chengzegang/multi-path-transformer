@@ -132,7 +132,7 @@ def step_model(
             batch = batch.to(device)
             out = proxy_model(batch.input_ids, labels=batch.input_ids)
 
-            accum_loss.append(out["loss"])
+            accum_loss.append(out["loss"].item())
 
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
@@ -141,9 +141,9 @@ def step_model(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
                 )
                 pbar.update()
-            if i % curr_grad_accum == 0 or i == 0:
+            if i % curr_grad_accum == 0:
                 pbar.update(torch.numel(input_ids) * world_size)
-                nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
+                nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
@@ -157,10 +157,10 @@ def step_model(
                             handles.append(handle)
                 sched.step(step)
                 step += 1
-                accum_loss = sum(accum_loss) / len(accum_loss)
-                # dist.barrier()
-                yield epoch, step, accum_loss, input_ids, output_ids
+                avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
+                yield epoch, step, avg_loss, input_ids, output_ids
+
                 curr_grad_accum = schedule_grad_accum(step)
         for handle in handles:
             handle.wait()
