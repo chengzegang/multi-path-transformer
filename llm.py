@@ -169,18 +169,6 @@ class LLM(nn.Module):
         super().load_state_dict(migrated_state_dict, strict, assign)
 
 
-class PipelineLLM(nn.Sequential):
-    @classmethod
-    def from_llm(cls, llm: LLM):
-        return cls(
-            llm.embed_tokens,
-            llm.embed_norm,
-            *[PipelineDecoderLayer(layer) for layer in llm.decoder.layers],
-            llm.lm_head_norm,
-            llm.lm_head,
-        )
-
-
 def _wrapped_forward(mod: nn.Module, *args, **kwargs):
     if mod.training:
         return checkpoint(mod._org_forward, *args, use_reentrant=True, **kwargs)

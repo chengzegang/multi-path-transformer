@@ -331,34 +331,14 @@ class Attention(nn.Module):
         return out, (k.detach(), v.detach())
 
 
-class DecoderOuterLayer(nn.Module):
+class _DecoderLayer(nn.Module):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
-    ):
-        super().__init__()
-        self.norm = MSNorm(hidden_size)
-        self.attention = Attention(hidden_size, num_heads, head_size, "outer", dropout)
-
-    def forward(
         self,
-        hidden_states: Tensor,
-        key_value_states: Optional[
-            Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]
-        ] = None,
-    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
-        residual = hidden_states
-        hidden_states = self.norm(residual)
-        hidden_states, inter_key_value_states = self.attention(
-            hidden_states,
-            None if key_value_states is None else key_value_states[0],
-        )
-        residual = residual + hidden_states
-        return residual, inter_key_value_states
-
-
-class DecoderInterLayer(nn.Module):
-    def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.01,
+        orient: str = "outer",
     ):
         super().__init__()
         self.norm = MSNorm(hidden_size)
@@ -367,12 +347,30 @@ class DecoderInterLayer(nn.Module):
     def forward(
         self,
         hidden_states: Tensor,
+        key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
         residual = hidden_states
         hidden_states = self.norm(residual)
-        hidden_states, outer_key_value_states = self.attention(hidden_states, None)
+        hidden_states, key_value_states = self.attention(
+            hidden_states,
+            None if key_value_states is None else key_value_states,
+        )
         residual = residual + hidden_states
-        return residual, outer_key_value_states
+        return residual, key_value_states
+
+
+class DecoderOuterLayer(_DecoderLayer):
+    def __init__(
+        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+    ):
+        super().__init__(hidden_size, num_heads, head_size, dropout, "outer")
+
+
+class DecoderInterLayer(_DecoderLayer):
+    def __init__(
+        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+    ):
+        super().__init__(hidden_size, num_heads, head_size, dropout, "inner")
 
 
 class DecoderLayer(nn.Module):
@@ -391,20 +389,14 @@ class DecoderLayer(nn.Module):
         ] = None,
     ) -> Tuple[Tensor, Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]:
         inter_key_value_states, outer_key_value_states = None, None
-        residual, inter_key_value_states = self.outer(hidden_states, key_value_states)
-        residual, outer_key_value_states = self.inter(residual)
+        residual, outer_key_value_states = self.outer(
+            hidden_states, None if key_value_states is None else key_value_states[0]
+        )
+        residual, inter_key_value_states = self.inter(
+            residual, None if key_value_states is None else key_value_states[1]
+        )
         key_value_states = (inter_key_value_states, outer_key_value_states)
         return residual, key_value_states
-
-
-class PipelineDecoderLayer(nn.Module):
-    def __init__(self, layer: DecoderLayer):
-        super().__init__()
-        self.layer = layer
-
-    def forward(self, hidden_states: Tensor) -> Tensor:
-        hidden_states, _ = self.layer(hidden_states)
-        return hidden_states
 
 
 class Decoder(nn.Module):

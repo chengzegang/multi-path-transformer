@@ -32,7 +32,7 @@ from torch.distributed.tensor.parallel import (
     PairwiseParallel,
 )
 from ddp import DistributedModule  # type: ignore
-from llm import LLM, add_gradient_checkpoint, PipelineLLM
+from llm import LLM, add_gradient_checkpoint
 from llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -287,6 +287,7 @@ def train(
         proxy_model = model
     else:
         proxy_model = model.to(device)
+
     opt = None
     if distributed:
         opt = ZRO(
