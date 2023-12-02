@@ -34,11 +34,7 @@ echo "MASTER_ADDR: $MASTER_ADDR"
 singularity exec --nv \
 	    --overlay /scratch/$USER/containers/overlay.ext3:ro  \
 	    /scratch/work/public/singularity/cuda12.2.2-cudnn8.9.4-devel-ubuntu22.04.3.sif \
-	    /bin/bash -c "source /ext3/env.sh; \\
-		cd /scratch/zc2309/multi-path-transformer/; \\
-		export PATH=/usr/local/cuda-12.2/bin:/usr/local/cuda-12.2/lib64:$PATH \\
-		export LD_LIBRARY_PATH=/usr/local/cuda-12.2/lib64:/usr/lib:/usr/lib64:/usr/lib32:$LD_LIBRARY_PATH \\
-		export CUDA_HOME=/usr/local/cuda-12.2 \\
+	    /bin/bash -c "source /ext3/env.sh; cd /scratch/zc2309/multi-path-transformer/; \\
 		torchrun \\
     		--rdzv-id=$SLURM_JOB_ID \\
     		--nnodes=$SLURM_JOB_NUM_NODES \\
