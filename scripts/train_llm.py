@@ -129,18 +129,14 @@ def step_model(
         accum_loss = []
 
         for i, batch in enumerate(dl):
-            
-            
             proxy_model.train()
             batch = batch.to(device)
-            out = None
-            if i % curr_grad_accum != 0:
-                with proxy_model.no_sync():
-                    out = proxy_model(batch.input_ids, labels=batch.input_ids)
-                    out['loss'].backward()
-            else:
-                out = proxy_model(batch.input_ids, labels=batch.input_ids)
+            out = proxy_model(batch.input_ids, labels=batch.input_ids)
+            if i % curr_grad_accum == 0:
                 out['loss'].backward()
+            else:
+                with proxy_model.no_sync():
+                    out['loss'].backward()
             accum_loss.append(out["loss"].item())
 
             input_ids = batch["input_ids"]
@@ -155,8 +151,9 @@ def step_model(
                 opt.step()
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
-                opt.zero_grad()
+                
                 sched.step(step)
+                opt.zero_grad()
                 step += 1
                 avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
