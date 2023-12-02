@@ -138,7 +138,7 @@ def step_model(
 
             
             out = proxy_model(batch.input_ids, labels=batch.input_ids)
-            if i % curr_grad_accum == 0 or first:
+            if i % curr_grad_accum == 0:
                 out['loss'].backward()
             else:
                 with proxy_model.no_sync():
