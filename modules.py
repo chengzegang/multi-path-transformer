@@ -4,7 +4,7 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 from typing import List, Optional, Tuple
 from torch.utils.checkpoint import checkpoint
-
+torch._dynamo.reset()
 
 @torch.compile(fullgraph=True, dynamic=False, mode="max-autotune")
 @torch.jit.script

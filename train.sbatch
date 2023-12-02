@@ -3,12 +3,12 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=64
+#SBATCH --cpus-per-task=16
 #SBATCH --time=48:00:00
-#SBATCH --mem=490GB 
-#SBATCH --gres=gpu:a100:4
-#SBATCH --job-name=llm2
-#SBATCH --output=llm2.out
+#SBATCH --mem=128GB 
+#SBATCH --gres=gpu:a100:1
+#SBATCH --job-name=llm
+#SBATCH --output=llm.out
 
 # To use torch.compile
 
