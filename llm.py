@@ -1,7 +1,8 @@
+from collections import OrderedDict
 from functools import partial
 import math
 import random
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Mapping, Optional, Tuple, Union
 import torch.distributed as dist
 import torch
 import torch.nn.functional as F
@@ -10,7 +11,7 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from modules import Attention, Decoder, MSNorm, Linear, PipelineDecoderLayer
+from modules import Attention, Decoder, MSNorm, PipelineDecoderLayer
 import matplotlib
 from transformers import AutoTokenizer
 from enum import Enum
@@ -44,9 +45,7 @@ class LLM(nn.Module):
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
-        self.embed_norm = MSNorm(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
-        self.lm_head_norm = MSNorm(hidden_size)
         self.lm_head = nn.Linear(
             bunch_size * hidden_size, vocab_size, dtype=torch.bfloat16
         )
@@ -78,11 +77,9 @@ class LLM(nn.Module):
         ] = None,
     ):
         input_embeds = self.embed_tokens(input_ids)
-        input_embeds = self.embed_norm(input_embeds)
         pred_logits, past_key_values = self.decoder(
             input_embeds, key_value_states=past_key_values
         )
-        pred_logits = self.lm_head_norm(pred_logits)
         pred_logits = self.lm_head(pred_logits)
 
         loss = None
@@ -133,6 +130,43 @@ class LLM(nn.Module):
                 return pred_strings
             yield pred_strings
             input_ids = torch.as_tensor(sample_token_id).view(-1, 1)
+
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
+    ):
+        # return super().load_state_dict(state_dict, strict, assign)
+        migrated_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            if "q_proj.linear" in k:
+                k = k.replace("q_proj.linear", "q_proj")
+            if "k_proj.linear" in k:
+                k = k.replace("k_proj.linear", "k_proj")
+            if "v_proj.linear" in k:
+                k = k.replace("v_proj.linear", "v_proj")
+            if "w_proj.linear" in k:
+                k = k.replace("w_proj.linear", "w_proj")
+            if "out_proj.linear" in k:
+                k = k.replace("out_proj.linear", "out_proj")
+
+            if "pre_outer_norm" in k:
+                k = k.replace(
+                    "pre_outer_norm",
+                    "outer.norm",
+                )
+            if "outer_attention" in k:
+                k = k.replace("outer_attention", "outer.attention")
+            if "pre_inter_norm" in k:
+                k = k.replace(
+                    "pre_inter_norm",
+                    "inter.norm",
+                )
+            if "inter_attention" in k:
+                k = k.replace("inter_attention", "inter.attention")
+            if "lm_head_norm" in k:
+                k = k.replace("lm_head_norm", "decoder.out_norm")
+            migrated_state_dict[k] = v
+
+        super().load_state_dict(migrated_state_dict, strict, assign)
 
 
 class PipelineLLM(nn.Sequential):

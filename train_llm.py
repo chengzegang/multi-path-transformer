@@ -96,7 +96,7 @@ def step_model(
     grad_accum: int,
     step: int,
     pbar: tqdm,
-    enable_compiler: bool = True,
+    enable_compiler: bool = False,
     distributed: bool = False,
     ema: bool = False,
     num_tokens_per_batch: int = 0,
@@ -142,7 +142,7 @@ def step_model(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
                 )
                 pbar.update()
-            if i % curr_grad_accum == 0 and i > 0:
+            if i % curr_grad_accum == 0 or i == 0:
                 nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
@@ -268,7 +268,7 @@ def train(
         ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
         try:
-            model.load_state_dict(torch.load(ckpt, map_location="cpu"))
+            model.load_state_dict(torch.load(ckpt, map_location="cpu"), strict=False)
         except Exception as e:
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
