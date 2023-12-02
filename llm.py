@@ -50,6 +50,13 @@ class LLM(nn.Module):
             bunch_size * hidden_size, vocab_size, dtype=torch.bfloat16
         )
 
+    @torch.compile(fullgraph=True, dynamic=False, mode="max-autotune")
+    def _forward(self, input_ids: Tensor) -> Tensor:
+        input_embeds = self.embed_tokens(input_ids)
+        pred_logits = self.decoder(input_embeds)
+        pred_logits = self.lm_head(pred_logits)
+        return pred_logits
+
     @property
     def model_config(self):
         return {
@@ -70,11 +77,15 @@ class LLM(nn.Module):
             List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
         ] = None,
     ):
-        input_embeds = self.embed_tokens(input_ids)
-        pred_logits, past_key_values = self.decoder(
-            input_embeds, key_value_states=past_key_values
-        )
-        pred_logits = self.lm_head(pred_logits)
+        pred_logits = None
+        if self.training:
+            pred_logits = self._forward(input_ids)
+        else:
+            input_embeds = self.embed_tokens(input_ids)
+            pred_logits, past_key_values = self.decoder(
+                input_embeds, key_value_states=past_key_values
+            )
+            pred_logits = self.lm_head(pred_logits)
 
         loss = None
         if labels is not None:

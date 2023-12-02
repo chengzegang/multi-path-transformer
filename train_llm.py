@@ -104,7 +104,6 @@ def step_model(
     # loss = 0
     input_ids = None
     output_ids = None
-    proxy_model = optimize_model(proxy_model, enable_compiler)
 
     avg_model = None
     if ema:
@@ -152,7 +151,9 @@ def step_model(
                 if distributed:
                     for p in proxy_model.parameters():
                         if p.requires_grad:
-                            handle = dist.all_reduce(p, op=dist.ReduceOp.AVG, async_op=True)
+                            handle = dist.all_reduce(
+                                p, op=dist.ReduceOp.AVG, async_op=True
+                            )
                             handles.append(handle)
                 sched.step(step)
                 step += 1
@@ -164,15 +165,6 @@ def step_model(
         for handle in handles:
             handle.wait()
         yield epoch, step, accum_loss, input_ids, output_ids
-
-
-def optimize_model(model: LLM, enabled: bool = True) -> nn.Module:
-    proxy_model = model
-    if enabled:
-        proxy_model = torch.compile(
-            model, fullgraph=True, dynamic=False, mode="max-autotune"
-        )
-    return proxy_model
 
 
 def num_params(model: nn.Module) -> str:
