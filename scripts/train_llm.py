@@ -129,15 +129,22 @@ def step_model(
         accum_loss = []
 
         for i, batch in enumerate(dl):
-            with proxy_model.no_sync():
-                proxy_model.train()
-                batch = batch.to(device)
+            
+            
+            proxy_model.train()
+            batch = batch.to(device)
+            out = None
+            if i % curr_grad_accum != 0:
+                with proxy_model.no_sync():
+                    out = proxy_model(batch.input_ids, labels=batch.input_ids)
+                    out['loss'].backward()
+            else:
                 out = proxy_model(batch.input_ids, labels=batch.input_ids)
+                out['loss'].backward()
+            accum_loss.append(out["loss"].item())
 
-                accum_loss.append(out["loss"].item())
-
-                input_ids = batch["input_ids"]
-                output_ids = out["logits"]
+            input_ids = batch["input_ids"]
+            output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
                 pbar.set_description(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
