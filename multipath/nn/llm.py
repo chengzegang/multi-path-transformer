@@ -133,43 +133,6 @@ class LLM(nn.Module):
             yield pred_strings
             input_ids = torch.as_tensor(sample_token_id).view(-1, 1)
 
-    def load_state_dict(
-        self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
-    ):
-        # return super().load_state_dict(state_dict, strict, assign)
-        migrated_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            if "q_proj.linear" in k:
-                k = k.replace("q_proj.linear", "q_proj")
-            if "k_proj.linear" in k:
-                k = k.replace("k_proj.linear", "k_proj")
-            if "v_proj.linear" in k:
-                k = k.replace("v_proj.linear", "v_proj")
-            if "w_proj.linear" in k:
-                k = k.replace("w_proj.linear", "w_proj")
-            if "out_proj.linear" in k:
-                k = k.replace("out_proj.linear", "out_proj")
-
-            if "pre_outer_norm" in k:
-                k = k.replace(
-                    "pre_outer_norm",
-                    "outer.norm",
-                )
-            if "outer_attention" in k:
-                k = k.replace("outer_attention", "outer.attention")
-            if "pre_inter_norm" in k:
-                k = k.replace(
-                    "pre_inter_norm",
-                    "inter.norm",
-                )
-            if "inter_attention" in k:
-                k = k.replace("inter_attention", "inter.attention")
-            if "lm_head_norm" in k:
-                k = k.replace("lm_head_norm", "decoder.out_norm")
-            migrated_state_dict[k] = v
-
-        super().load_state_dict(migrated_state_dict, strict, assign)
-
 
 def _wrapped_forward(mod: nn.Module, *args, **kwargs):
     if mod.training:

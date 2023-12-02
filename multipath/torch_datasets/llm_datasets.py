@@ -69,6 +69,9 @@ class WebData(IterableDataset):
         # )
         return cc
 
+    def __len__(self):
+        return 500000000
+
     def __iter__(self):
         for d in self.load_dataset():
             yield {"text": d["text"]}
@@ -113,14 +116,15 @@ class Pile(IterDataPipe):
 
 
 class Sentence(IterDataPipe):
-    def __init__(
-        self, dataset: IterDataPipe, max_size: int, tokenizer: AutoTokenizer
-    ):
+    def __init__(self, dataset: IterDataPipe, max_size: int, tokenizer: AutoTokenizer):
         self.tokenizer = tokenizer
         # self.data = load_dataset("c4", "en", split="train", streaming=True).shuffle()
 
         self.dataset = dataset
         self.max_size = max_size
+
+    def __len__(self):
+        return len(self.dataset)
 
     def __iter__(self):
         # root = "/mnt/d/datasets/pixiv"

@@ -45,6 +45,7 @@ from torch.distributed.pipeline.sync import Pipe  # type: ignore
 from torch.distributed import rpc
 import torch._dynamo
 import warnings
+
 warnings.simplefilter("ignore")
 torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.cache_size_limit = 256
@@ -132,17 +133,15 @@ def step_model(
         accum_loss = []
 
         for i, batch in enumerate(dl):
-            
             proxy_model.train()
             batch = batch.to(device)
 
-            
             out = proxy_model(batch.input_ids, labels=batch.input_ids)
             if i % curr_grad_accum == 0:
-                out['loss'].backward()
+                out["loss"].backward()
             else:
                 with proxy_model.no_sync():
-                    out['loss'].backward()
+                    out["loss"].backward()
             accum_loss.append(out["loss"].item())
 
             input_ids = batch["input_ids"]
@@ -157,7 +156,7 @@ def step_model(
                 opt.step()
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
-                
+
                 sched.step(step)
                 opt.zero_grad()
                 step += 1
@@ -235,7 +234,6 @@ def train(
     )
 
     if distributed:
-
         torch.cuda.set_device(local_rank)
         os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
         dist.init_process_group("nccl")
@@ -268,7 +266,6 @@ def train(
 
     proxy_model = None
     if distributed:
-
         model = model.to(device)
         proxy_model = DDP(model, gradient_as_bucket_view=True, static_graph=True)
     else:
@@ -284,8 +281,7 @@ def train(
             betas=(0.9, 0.95),
             fused=True,
             parameters_as_bucket_view=True,
-            eps=1e-5
-
+            eps=1e-5,
         )
     else:
         opt = AdamW(
@@ -294,7 +290,7 @@ def train(
             weight_decay=1e-2,
             fused=True,
             betas=(0.9, 0.95),
-            eps=1e-5
+            eps=1e-5,
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.9999, 0.1))

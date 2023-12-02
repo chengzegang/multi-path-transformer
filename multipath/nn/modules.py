@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from typing import List, Optional, Tuple
 from torch.utils.checkpoint import checkpoint
 import torch._dynamo
+
 torch._dynamo.config.suppress_errors = True
 
 
@@ -141,8 +142,6 @@ def fused_outer_rotary_attention(
     kb: Tensor,
     vw: Tensor,
     vb: Tensor,
-    ww: Tensor,
-    wb: Tensor,
     ow: Tensor,
     ob: Tensor,
     rotery_cos: Tensor,
@@ -151,7 +150,6 @@ def fused_outer_rotary_attention(
     q = F.linear(x, qw, qb)
     k = F.linear(x, kw, kb)
     v = F.linear(x, vw, vb)
-    w = F.linear(x, ww, wb)
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(1, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(1, -2)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(1, -2)
@@ -159,8 +157,7 @@ def fused_outer_rotary_attention(
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=True)
     o = o.transpose(1, -2).flatten(-2)
-    w = F.silu(w, inplace=True)
-    o = F.linear(o * w, ow, ob)
+    o = F.linear(o, ow, ob)
     return o
 
 
@@ -175,8 +172,6 @@ def fused_inter_rotary_attention(
     kb: Tensor,
     vw: Tensor,
     vb: Tensor,
-    ww: Tensor,
-    wb: Tensor,
     ow: Tensor,
     ob: Tensor,
     rotery_cos: Tensor,
@@ -185,7 +180,6 @@ def fused_inter_rotary_attention(
     q = F.linear(x, qw, qb)
     k = F.linear(x, kw, kb)
     v = F.linear(x, vw, vb)
-    w = F.linear(x, ww, wb)
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(2, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(2, -2)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(2, -2)
@@ -193,8 +187,38 @@ def fused_inter_rotary_attention(
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
     o = o.transpose(2, -2).flatten(-2)
-    w = F.silu(w, inplace=True)
-    o = F.linear(o * w, ow, ob)
+    o = F.linear(o, ow, ob)
+    return o
+
+
+@torch.compile(dynamic=False, mode="max-autotune")
+@torch.jit.script
+def fused_inner_rotary_attention(
+    head_size: int,
+    x: Tensor,
+    qw: Tensor,
+    qb: Tensor,
+    kw: Tensor,
+    kb: Tensor,
+    vw: Tensor,
+    vb: Tensor,
+    ow: Tensor,
+    ob: Tensor,
+    rotery_cos: Tensor,
+    rotery_sin: Tensor,
+) -> Tensor:
+    q = F.linear(x, qw, qb)
+    k = F.linear(x, kw, kb)
+    v = F.linear(x, vw, vb)
+
+    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size)
+    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size)
+    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size)
+    q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
+    k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+    o = o.flatten(-2)
+    o = F.linear(o, ow, ob)
     return o
 
 
@@ -219,9 +243,6 @@ class Attention(nn.Module):
             hidden_size, num_heads * head_size, dtype=torch.bfloat16
         )
         self.v_proj = nn.Linear(
-            hidden_size, num_heads * head_size, dtype=torch.bfloat16
-        )
-        self.w_proj = nn.Linear(
             hidden_size, num_heads * head_size, dtype=torch.bfloat16
         )
         self.out_proj = nn.Linear(
@@ -276,14 +297,12 @@ class Attention(nn.Module):
                     self.k_proj.bias,
                     self.v_proj.weight,
                     self.v_proj.bias,
-                    self.w_proj.weight,
-                    self.w_proj.bias,
                     self.out_proj.weight,
                     self.out_proj.bias,
                     self.rotary._cos_cached,
                     self.rotary._sin_cached,
                 ), (None, None)
-            else:
+            elif self.orient == "inter":
                 return fused_inter_rotary_attention(
                     self.head_size,
                     hidden_states,
@@ -293,8 +312,21 @@ class Attention(nn.Module):
                     self.k_proj.bias,
                     self.v_proj.weight,
                     self.v_proj.bias,
-                    self.w_proj.weight,
-                    self.w_proj.bias,
+                    self.out_proj.weight,
+                    self.out_proj.bias,
+                    self.rotary._cos_cached,
+                    self.rotary._sin_cached,
+                ), (None, None)
+            else:
+                return fused_inner_rotary_attention(
+                    self.head_size,
+                    hidden_states,
+                    self.q_proj.weight,
+                    self.q_proj.bias,
+                    self.k_proj.weight,
+                    self.k_proj.bias,
+                    self.v_proj.weight,
+                    self.v_proj.bias,
                     self.out_proj.weight,
                     self.out_proj.bias,
                     self.rotary._cos_cached,
@@ -304,7 +336,7 @@ class Attention(nn.Module):
         q: Tensor = self.q_proj(hidden_states)
         k: Tensor = self.k_proj(hidden_states)
         v: Tensor = self.v_proj(hidden_states)
-        w: Tensor = self.w_proj(hidden_states)
+
         if key_value_states is not None:
             k_cache, v_cache = key_value_states
             k = torch.cat([k_cache, k], dim=1)
@@ -327,7 +359,7 @@ class Attention(nn.Module):
 
         attn_scores = self._post_attention_permute(attn_scores)
 
-        out = self.out_proj(self.nonlinear(w) * attn_scores)
+        out = self.out_proj(attn_scores)
 
         return out, (k.detach(), v.detach())
 
@@ -374,6 +406,13 @@ class DecoderInterLayer(_DecoderLayer):
         super().__init__(hidden_size, num_heads, head_size, dropout, "inter")
 
 
+class DecoderInnerLayer(_DecoderLayer):
+    def __init__(
+        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+    ):
+        super().__init__(hidden_size, num_heads, head_size, dropout, "inner")
+
+
 class DecoderLayer(nn.Module):
     def __init__(
         self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
@@ -381,6 +420,7 @@ class DecoderLayer(nn.Module):
         super().__init__()
         self.outer = DecoderOuterLayer(hidden_size, num_heads, head_size, dropout)
         self.inter = DecoderInterLayer(hidden_size, num_heads, head_size, dropout)
+        self.inner = DecoderInnerLayer(hidden_size, num_heads, head_size, dropout)
 
     def forward(
         self,
@@ -396,6 +436,7 @@ class DecoderLayer(nn.Module):
         residual, inter_key_value_states = self.inter(
             residual, None if key_value_states is None else key_value_states[1]
         )
+        residual, _ = self.inner(residual, None)
         key_value_states = (inter_key_value_states, outer_key_value_states)
         return residual, key_value_states
 
