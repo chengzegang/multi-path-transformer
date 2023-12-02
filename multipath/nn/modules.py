@@ -5,10 +5,11 @@ import torch.nn.functional as F
 from typing import List, Optional, Tuple
 from torch.utils.checkpoint import checkpoint
 import torch._dynamo
-
 torch._dynamo.reset()
 torch._dynamo.config.suppress_errors = True
 
+
+@torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_msnorm(x: Tensor, weight: Tensor, eps: float = 1e-6) -> Tensor:
     x = x * torch.rsqrt((x**2).mean(dim=-1, keepdim=True) + eps) * weight
@@ -130,7 +131,7 @@ class MonteCarloDropout(nn.Module):
         return x
 
 
-#@torch.compile(fullgraph=True, dynamic=False, mode="max-autotune")
+@torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_outer_rotary_attention(
     head_size: int,
@@ -164,7 +165,7 @@ def fused_outer_rotary_attention(
     return o
 
 
-#@torch.compile(fullgraph=True, dynamic=False, mode="max-autotune")
+@torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_inter_rotary_attention(
     head_size: int,
