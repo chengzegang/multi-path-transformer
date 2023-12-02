@@ -143,7 +143,9 @@ def step_model(
             batch = batch.to(device)
 
             out = proxy_model(batch.input_ids, labels=batch.input_ids)
-            if i % curr_grad_accum == 0 or not isinstance(proxy_model, DDP):
+            if len(accum_loss) % curr_grad_accum == 0 or not isinstance(
+                proxy_model, DDP
+            ):
                 out["loss"].backward()
             else:
                 with proxy_model.no_sync():
@@ -154,10 +156,10 @@ def step_model(
             output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
                 pbar.set_description(
-                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{curr_grad_accum}"
                 )
                 pbar.update(torch.numel(input_ids) * world_size)
-            if i % curr_grad_accum == 0:
+            if len(accum_loss) % curr_grad_accum == 0:
                 nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
