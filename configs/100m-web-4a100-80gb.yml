@@ -10,7 +10,7 @@ lr: 3.0e-4
 num_workers: 1
 model_config:
   bunch_size: 2
-  hidden_size: 512
+  hidden_size: 1024
   num_layers: 24
   num_heads: 16
   head_size: 64
