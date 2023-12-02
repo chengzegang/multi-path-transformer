@@ -124,19 +124,19 @@ def step_model(
         last_accum_steps=target_grad_accum,
     )
     curr_grad_accum = grad_accum
-    handles = []
     for epoch in range(num_epochs):
         accum_loss = []
 
         for i, batch in enumerate(dl):
-            proxy_model.train()
-            batch = batch.to(device)
-            out = proxy_model(batch.input_ids, labels=batch.input_ids)
+            with proxy_model.no_sync():
+                proxy_model.train()
+                batch = batch.to(device)
+                out = proxy_model(batch.input_ids, labels=batch.input_ids)
 
-            accum_loss.append(out["loss"].item())
+             accum_loss.append(out["loss"].item())
 
-            input_ids = batch["input_ids"]
-            output_ids = out["logits"]
+                input_ids = batch["input_ids"]
+                output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
                 pbar.set_description(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
@@ -149,13 +149,6 @@ def step_model(
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
                 opt.zero_grad()
-                if distributed:
-                    for p in proxy_model.parameters():
-                        if p.requires_grad:
-                            handle = dist.all_reduce(
-                                p, op=dist.ReduceOp.AVG, async_op=True
-                            )
-                            handles.append(handle)
                 sched.step(step)
                 step += 1
                 avg_loss = sum(accum_loss) / len(accum_loss)
@@ -163,8 +156,6 @@ def step_model(
                 yield epoch, step, avg_loss, input_ids, output_ids
 
                 curr_grad_accum = schedule_grad_accum(step)
-        for handle in handles:
-            handle.wait()
         yield epoch, step, accum_loss, input_ids, output_ids
 
 
@@ -219,7 +210,7 @@ def train(
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     distributed: bool = False,
-    enable_compiler: bool = True,
+    enable_compiler: bool = False,
     warmup_steps: int = 100,
     ema: bool = True,
 ):
@@ -280,8 +271,8 @@ def train(
         #    model, mesh, parallelize_plan=PairwiseParallel()
         # )
         model = model.to(device)
+        proxy_model = DDP(model, gradient_as_bucket_view=True, static_graph=True)
         # pre_dp_module_transform(proxy_model)
-        proxy_model = model
     else:
         proxy_model = model.to(device)
 
@@ -294,7 +285,8 @@ def train(
             weight_decay=1e-2,
             betas=(0.9, 0.999),
             fused=True,
-            parameters_as_bucket_view=True,
+            #parameters_as_bucket_view=True,
+            overlap_with_ddp=True,
         )
     else:
         opt = AdamW(
