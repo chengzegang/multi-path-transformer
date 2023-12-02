@@ -124,7 +124,7 @@ def step_model(
         last_accum_steps=target_grad_accum,
     )
     curr_grad_accum = grad_accum
-    handle = None
+    handles = []
     for epoch in range(num_epochs):
         accum_loss = []
 
@@ -137,22 +137,23 @@ def step_model(
 
             input_ids = batch["input_ids"]
             output_ids = out["logits"]
-            if pbar is not None:
+            if os.getenv("LOCAL_RANK", "0") == "0":
                 pbar.set_description(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
                 )
                 pbar.update()
             if i % curr_grad_accum == 0 or i == 0:
+                pbar.update(torch.numel(input_ids) * world_size)
                 nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
                 opt.zero_grad()
                 if distributed:
-                    if handle is not None:
-                        handle.wait()
                     for p in proxy_model.parameters():
-                        handle = dist.all_reduce(p, op=dist.ReduceOp.AVG)
+                        if p.requires_grad:
+                            handle = dist.all_reduce(p, op=dist.ReduceOp.AVG, async_op=True)
+                            handles.append(handle)
                 sched.step(step)
                 step += 1
                 accum_loss = sum(accum_loss) / len(accum_loss)
@@ -160,6 +161,9 @@ def step_model(
                 yield epoch, step, accum_loss, input_ids, output_ids
                 accum_loss = []
                 curr_grad_accum = schedule_grad_accum(step)
+        for handle in handles:
+            handle.wait()
+        yield epoch, step, accum_loss, input_ids, output_ids
 
 
 def optimize_model(model: LLM, enabled: bool = True) -> nn.Module:
@@ -360,13 +364,11 @@ def train(
             },
         )
 
-    total_tokens = 5000000000000 // world_size
-    num_samples = total_tokens // max_size
-    num_batches = num_samples // batch_size
+    total_tokens = 5000000000000
     pbar = None
     num_tokens_per_batch = batch_size * max_size
     if local_rank == 0:
-        pbar = tqdm(total=num_batches, dynamic_ncols=True, unit_scale=True)
+        pbar = tqdm(total=total_tokens, dynamic_ncols=True, unit_scale=True)
         pbar.update(step * 512 * 1024 * world_size)
     iteration = step_model(
         device,
