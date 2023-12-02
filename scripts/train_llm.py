@@ -84,6 +84,12 @@ def expoential_lr(
         return max(beta ** (step - warmup_steps), min_factor)
 
 
+def cosine_lr(step: int, total_steps: int, lr_max: float, lr_min: float) -> float:
+    return lr_min + (lr_max - lr_min) * 0.5 * (
+        1 + math.cos(step / total_steps * math.pi)
+    )
+
+
 def grad_accumulation_scheduler(
     step: int, init_accum_steps: int = 0, last_accum_steps: int = 0, rate: float = 0.01
 ):
@@ -293,7 +299,7 @@ def train(
             eps=1e-5,
         )
 
-    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.9999, 0.1))
+    sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
     data = None
     if data_name == "pile":
         data = Pile(root)
