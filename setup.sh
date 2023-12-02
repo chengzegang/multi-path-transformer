@@ -1,5 +1,2 @@
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia --solver=libmamba\
-# pip install torch \
-# torchvision \
-# torchaudio \
-# --index-url https://download.pytorch.org/whl/cu121
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia --solver=libmamba -y
+conda install transformers datasets pyarrow pandas evaluate accelerate sentencepiece wandb pynvml wandb typer jsonlines matplotlib -c conda-forge --solver=libmamba -y
