@@ -344,7 +344,7 @@ class _DecoderLayer(nn.Module):
     ):
         super().__init__()
         self.norm = MSNorm(hidden_size)
-        self.attention = Attention(hidden_size, num_heads, head_size, "inner", dropout)
+        self.attention = Attention(hidden_size, num_heads, head_size, "inter", dropout)
 
     def forward(
         self,
@@ -372,7 +372,7 @@ class DecoderInterLayer(_DecoderLayer):
     def __init__(
         self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
     ):
-        super().__init__(hidden_size, num_heads, head_size, dropout, "inner")
+        super().__init__(hidden_size, num_heads, head_size, dropout, "inter")
 
 
 class DecoderLayer(nn.Module):
