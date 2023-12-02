@@ -53,7 +53,7 @@ class LLM(nn.Module):
     @torch.compile(fullgraph=True, dynamic=False, mode="max-autotune")
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
-        pred_logits = self.decoder(input_embeds)
+        pred_logits, _ = self.decoder(input_embeds)
         pred_logits = self.lm_head(pred_logits)
         return pred_logits
 
