@@ -137,7 +137,7 @@ def step_model(
             batch = batch.to(device)
 
             out = proxy_model(batch.input_ids, labels=batch.input_ids)
-            if i % curr_grad_accum == 0:
+            if i % curr_grad_accum == 0 or not isinstance(proxy_model, DDP):
                 out["loss"].backward()
             else:
                 with proxy_model.no_sync():
