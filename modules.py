@@ -252,7 +252,6 @@ class Attention(nn.Module):
         )
 
     def _post_attention_permute(self, hidden_states: Tensor) -> Tensor:
-        hidden_states = self.dropout(hidden_states)
         if self.orient == "outer":
             return hidden_states.transpose(1, -2).flatten(-2)
         else:
@@ -263,6 +262,7 @@ class Attention(nn.Module):
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]] | Tensor:
+        hidden_states = self.dropout(hidden_states)
         if self.training:
             if self.orient == "outer":
                 return fused_outer_rotary_attention(
