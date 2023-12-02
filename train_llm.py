@@ -222,7 +222,7 @@ def train(
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     distributed: bool = False,
-    enable_compiler: bool = False,
+    enable_compiler: bool = True,
     warmup_steps: int = 100,
     ema: bool = True,
 ):
