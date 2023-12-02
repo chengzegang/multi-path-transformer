@@ -44,6 +44,8 @@ import torch._dynamo.config
 from torch.distributed.pipeline.sync import Pipe  # type: ignore
 from torch.distributed import rpc
 import torch._dynamo
+import warning
+warnings.simplefilter("ignore")
 torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
