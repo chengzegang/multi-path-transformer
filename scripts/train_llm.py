@@ -43,7 +43,8 @@ from torch.optim.swa_utils import AveragedModel, get_ema_avg_fn
 import torch._dynamo.config
 from torch.distributed.pipeline.sync import Pipe  # type: ignore
 from torch.distributed import rpc
-
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
 cudnn.allow_tf32 = True
@@ -131,9 +132,18 @@ def step_model(
             with proxy_model.no_sync():
                 proxy_model.train()
                 batch = batch.to(device)
-                out = proxy_model(batch.input_ids, labels=batch.input_ids)
+                out = None
+                if i % curr_grad_accum == 0:
+                    nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0, foreach=True)
+                    out = proxy_model(batch.input_ids, labels=batch.input_ids)
+                    opt.zero_grad()
+                    sched.step(step)
+                    step += 1
+                else:
+                    with proxy_model.no_sync():
+                        out = proxy_model(batch.input_ids, labels=batch.input_ids)
 
-             accum_loss.append(out["loss"].item())
+                accum_loss.append(out["loss"].item())
 
                 input_ids = batch["input_ids"]
                 output_ids = out["logits"]
@@ -141,21 +151,16 @@ def step_model(
                 pbar.set_description(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
                 )
-                pbar.update()
-            if i % curr_grad_accum == 0:
                 pbar.update(torch.numel(input_ids) * world_size)
-                nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0)
-                opt.step()
-                if avg_model is not None:
-                    avg_model.update_parameters(proxy_model)
-                opt.zero_grad()
-                sched.step(step)
-                step += 1
-                avg_loss = sum(accum_loss) / len(accum_loss)
-                accum_loss = []
-                yield epoch, step, avg_loss, input_ids, output_ids
-
+                if i % curr_grad_accum == 0:
+                    avg_loss = sum(accum_loss) / len(accum_loss)
+                    accum_loss = []
+                    yield epoch, step, avg_loss, input_ids, output_ids
+            
+            if i % curr_grad_accum == 0:
                 curr_grad_accum = schedule_grad_accum(step)
+
+    if os.getenv("LOCAL_RANK", "0") == "0":
         yield epoch, step, accum_loss, input_ids, output_ids
 
 
