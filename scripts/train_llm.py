@@ -44,7 +44,7 @@ import torch._dynamo.config
 from torch.distributed.pipeline.sync import Pipe  # type: ignore
 from torch.distributed import rpc
 import torch._dynamo
-import warning
+import warnings
 warnings.simplefilter("ignore")
 torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.cache_size_limit = 256
@@ -127,12 +127,22 @@ def step_model(
         last_accum_steps=target_grad_accum,
     )
     curr_grad_accum = grad_accum
+
+    first = True
     for epoch in range(num_epochs):
         accum_loss = []
 
         for i, batch in enumerate(dl):
+            
             proxy_model.train()
             batch = batch.to(device)
+
+            if first:
+                with torch.no_grad(): # to capture cudagraphs
+                    out = proxy_model(batch.input_ids, labels=batch.input_ids)
+                    first = False
+                    continue
+            
             out = proxy_model(batch.input_ids, labels=batch.input_ids)
             if i % curr_grad_accum == 0:
                 out['loss'].backward()
