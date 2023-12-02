@@ -16,4 +16,4 @@ model_config:
   num_heads: 16
   head_size: 64
 distributed: false
-ema: true
+ema: false
