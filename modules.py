@@ -394,7 +394,7 @@ class DecoderLayer(nn.Module):
         residual, inter_key_value_states = self.outer(hidden_states, key_value_states)
         residual, outer_key_value_states = self.inter(residual)
         key_value_states = (inter_key_value_states, outer_key_value_states)
-        return residual, key_value_states  # type: ignore
+        return residual, key_value_states
 
 
 class PipelineDecoderLayer(nn.Module):
