@@ -43,7 +43,10 @@ from torch.optim.swa_utils import AveragedModel, get_ema_avg_fn
 import torch._dynamo.config
 from torch.distributed.pipeline.sync import Pipe  # type: ignore
 from torch.distributed import rpc
-
+import torch._dynamo
+import warnings
+warnings.simplefilter("ignore")
+torch._dynamo.config.suppress_errors = True
 torch._dynamo.config.cache_size_limit = 256
 cudnn.benchmark = True
 cudnn.allow_tf32 = True
@@ -113,7 +116,7 @@ def step_model(
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(proxy_model)
-    target_num_tokens_per_batch = 1024 * 512
+    target_num_tokens_per_batch = 512 * 512
     world_size = int(os.getenv("WORLD_SIZE", 1))
     target_grad_accum = (
         target_num_tokens_per_batch // num_tokens_per_batch // world_size
@@ -124,15 +127,22 @@ def step_model(
         last_accum_steps=target_grad_accum,
     )
     curr_grad_accum = grad_accum
-    handles = []
+
     for epoch in range(num_epochs):
         accum_loss = []
 
         for i, batch in enumerate(dl):
+            
             proxy_model.train()
             batch = batch.to(device)
-            out = proxy_model(batch.input_ids, labels=batch.input_ids)
 
+            
+            out = proxy_model(batch.input_ids, labels=batch.input_ids)
+            if i % curr_grad_accum == 0:
+                out['loss'].backward()
+            else:
+                with proxy_model.no_sync():
+                    out['loss'].backward()
             accum_loss.append(out["loss"].item())
 
             input_ids = batch["input_ids"]
@@ -141,30 +151,21 @@ def step_model(
                 pbar.set_description(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {i % curr_grad_accum:3d}/{curr_grad_accum}"
                 )
-                pbar.update()
-            if i % curr_grad_accum == 0:
                 pbar.update(torch.numel(input_ids) * world_size)
+            if i % curr_grad_accum == 0:
                 nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
-                opt.zero_grad()
-                if distributed:
-                    for p in proxy_model.parameters():
-                        if p.requires_grad:
-                            handle = dist.all_reduce(
-                                p, op=dist.ReduceOp.AVG, async_op=True
-                            )
-                            handles.append(handle)
+                
                 sched.step(step)
+                opt.zero_grad()
                 step += 1
                 avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
                 yield epoch, step, avg_loss, input_ids, output_ids
 
                 curr_grad_accum = schedule_grad_accum(step)
-        for handle in handles:
-            handle.wait()
         yield epoch, step, accum_loss, input_ids, output_ids
 
 
@@ -219,7 +220,7 @@ def train(
     dtype: str = "bfloat16",
     tokenizer_id: str = "meta-llama/Llama-2-7b-chat-hf",
     distributed: bool = False,
-    enable_compiler: bool = True,
+    enable_compiler: bool = False,
     warmup_steps: int = 100,
     ema: bool = True,
 ):
@@ -232,20 +233,12 @@ def train(
     print(
         f"world_size: {world_size}, local_world_size: {local_world_size}, num_nodes: {num_nodes}, num_workers: {num_workers}"
     )
-    # mesh = None
+
     if distributed:
-        # total_gpus = num_nodes * local_world_size
-        # mesh_assign = (
-        #    torch.arange(total_gpus).reshape(num_nodes, local_world_size).tolist()
-        # )
+
         torch.cuda.set_device(local_rank)
         os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
         dist.init_process_group("nccl")
-        # mesh = DeviceMesh(device_type="cuda", mesh=mesh_assign)
-        # tmp = tempfile.NamedTemporaryFile(delete=False)
-        # rpc.init_rpc("worker", rank=0, world_size=1, rpc_backend_options=rpc.TensorPipeRpcBackendOptions(
-        #        init_method="file://{}".format(tmp.name)
-        #    ))
 
     device = torch.device("cuda", local_rank)
     dtype = getattr(torch, dtype)
@@ -275,13 +268,9 @@ def train(
 
     proxy_model = None
     if distributed:
-        # proxy_model = PipelineLLM.from_llm(model)
-        # proxy_model = parallelize_module(
-        #    model, mesh, parallelize_plan=PairwiseParallel()
-        # )
+
         model = model.to(device)
-        # pre_dp_module_transform(proxy_model)
-        proxy_model = model
+        proxy_model = DDP(model, gradient_as_bucket_view=True, static_graph=True)
     else:
         proxy_model = model.to(device)
 
@@ -292,9 +281,11 @@ def train(
             AdamW,
             lr=lr,
             weight_decay=1e-2,
-            betas=(0.9, 0.999),
+            betas=(0.9, 0.95),
             fused=True,
             parameters_as_bucket_view=True,
+            eps=1e-5
+
         )
     else:
         opt = AdamW(
@@ -302,7 +293,8 @@ def train(
             lr=lr,
             weight_decay=1e-2,
             fused=True,
-            betas=(0.9, 0.999),
+            betas=(0.9, 0.95),
+            eps=1e-5
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.9999, 0.1))
@@ -337,10 +329,10 @@ def train(
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.init(
             # set the wandb project where this run will be logged
-            project="llm",
-            name=f"llm-{total_params}-{name}-{date}",
+            project="multi-path-llm",
+            name=f"{total_params}-{name}-{date}",
             # track hyperparameters and run metadata
-            id=f"llm-{total_params}-{name}-{date}",
+            id=f"{total_params}-{name}-{date}",
             resume="allow",
             config={
                 "grad_accum": grad_accum,

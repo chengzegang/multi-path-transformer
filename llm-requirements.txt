@@ -9,4 +9,4 @@ evaluate
 matplotlib
 jsonlines
 pynvml
-pyarrowy
+pyarrow

@@ -50,7 +50,6 @@ class LLM(nn.Module):
             bunch_size * hidden_size, vocab_size, dtype=torch.bfloat16
         )
 
-    @torch.compile(fullgraph=True, dynamic=False, mode="max-autotune")
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
         pred_logits, _ = self.decoder(input_embeds)
@@ -85,7 +84,6 @@ class LLM(nn.Module):
                 target = labels[:, 1:].reshape(-1)
                 pred = pred_logits[:, :-1].flatten(0, 1)
                 loss = F.cross_entropy(pred, target)
-                loss.backward()
         else:
             input_embeds = self.embed_tokens(input_ids)
             pred_logits, past_key_values = self.decoder(

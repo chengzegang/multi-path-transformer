@@ -13,7 +13,7 @@
 # To use torch.compile
 
 export PATH=/usr/local/cuda-12/bin:/usr/local/cuda-12/lib64:$PATH
-export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/lib32:/usr/local/cuda-12/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-12/lib64:/usr/lib:/usr/lib64:/usr/lib32:$LD_LIBRARY_PATH
 export CUDA_HOME=/usr/local/cuda-12
 export TORCH_HOME=/scratch/zc2309/multi-path-transformer/torch
 export MPLCONFIGDIR=/scratch/zc2309/.cache/matplotlib
