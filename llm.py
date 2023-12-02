@@ -62,12 +62,6 @@ class LLM(nn.Module):
             "padding_idx": self.padding_idx,
         }
 
-    def decode(
-        self, input_embeds: Tensor, attn_mask: Optional[Tensor] = None
-    ) -> Tensor:
-        states = self.decoder(input_embeds, attn_mask=attn_mask)
-        return states
-
     def forward(
         self,
         input_ids: Tensor,
