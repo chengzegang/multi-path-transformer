@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from tqdm.auto import tqdm
 import glob
 from datasets import load_dataset
-from audio import Autoencoder1d, Discriminator
+from multipath.nn.audio import Autoencoder1d, Discriminator
 import wandb
 import scipy.io.wavfile as wav
 

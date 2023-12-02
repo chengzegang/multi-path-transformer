@@ -8,12 +8,12 @@ import glob
 from PIL import Image
 import torchvision.transforms.v2.functional as TF
 import matplotlib.pyplot as plt
-from vision import Autoencoder2d
+from multipath.nn.vision import Autoencoder2d
 import wandb
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import datapipes as dp
 from torch import Tensor
-from laion5b import Laion5B
+from multipath.torch_datasets.laion5b import Laion5B
 import warnings
 from PIL import ImageFile
 import lpips

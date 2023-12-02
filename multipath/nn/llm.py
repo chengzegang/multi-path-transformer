@@ -11,7 +11,7 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from modules import Attention, Decoder, MSNorm
+from .modules import Attention, Decoder, MSNorm
 import matplotlib
 from transformers import AutoTokenizer
 from enum import Enum

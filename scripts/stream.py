@@ -2,7 +2,7 @@
 from transformers import AutoTokenizer
 import torch
 import random
-from llm import LLM
+from multipath.nn.llm import LLM
 import glob
 
 

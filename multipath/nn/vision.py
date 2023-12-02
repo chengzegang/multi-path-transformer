@@ -1,6 +1,6 @@
 from torch import Tensor, nn
 import torch.nn.functional as F
-from modules import Attention
+from .modules import Attention
 
 
 class ConvLayer(nn.Module):

@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from tqdm.auto import tqdm
 import glob
 import torchvision.transforms.v2.functional as TF
-from mhvit import MHVisionTransformer
+from multipath.nn.mhvit import MHVisionTransformer
 import matplotlib.pyplot as plt
-from vision_datasets import BilibiliVideoStreams
+from multipath.torch_datasets.vision_datasets import BilibiliVideoStreams
 
 
 def train(db_path: str, cache_dir: str):

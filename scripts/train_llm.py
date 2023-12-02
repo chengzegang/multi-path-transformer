@@ -31,9 +31,10 @@ from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     PairwiseParallel,
 )
-from ddp import DistributedModule  # type: ignore
-from llm import LLM, add_gradient_checkpoint
-from llm_datasets import Pile, Sentence, WebData
+
+from multipath.nn.ddp import DistributedModule  # type: ignore
+from multipath.nn.llm import LLM, add_gradient_checkpoint
+from multipath.torch_datasets.llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.optim import ZeroRedundancyOptimizer as ZRO

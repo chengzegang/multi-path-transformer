@@ -1,7 +1,7 @@
 from torch import Tensor, nn
 import torch
 import torch.nn.functional as F
-from modules import DecoderLayer
+from .modules import DecoderLayer
 
 
 class RMSNorm(torch.nn.Module):
