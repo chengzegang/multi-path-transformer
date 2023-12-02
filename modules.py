@@ -252,6 +252,7 @@ class Attention(nn.Module):
         )
 
     def _post_attention_permute(self, hidden_states: Tensor) -> Tensor:
+        hidden_states = self.dropout(hidden_states)
         if self.orient == "outer":
             return hidden_states.transpose(1, -2).flatten(-2)
         else:
