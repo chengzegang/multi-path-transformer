@@ -128,7 +128,6 @@ def step_model(
     )
     curr_grad_accum = grad_accum
 
-    first = True
     for epoch in range(num_epochs):
         accum_loss = []
 
@@ -137,14 +136,9 @@ def step_model(
             proxy_model.train()
             batch = batch.to(device)
 
-            if first:
-                with torch.no_grad(): # to capture cudagraphs
-                    out = proxy_model(batch.input_ids, labels=batch.input_ids)
-                    first = False
-                    continue
             
             out = proxy_model(batch.input_ids, labels=batch.input_ids)
-            if i % curr_grad_accum == 0:
+            if i % curr_grad_accum == 0 or first:
                 out['loss'].backward()
             else:
                 with proxy_model.no_sync():

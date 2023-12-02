@@ -50,7 +50,7 @@ class LLM(nn.Module):
             bunch_size * hidden_size, vocab_size, dtype=torch.bfloat16
         )
 
-    #@torch.compile(dynamic=False, mode="max-autotune")
+    @torch.compile(dynamic=False, mode="max-autotune")
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
         pred_logits, _ = self.decoder(input_embeds)
