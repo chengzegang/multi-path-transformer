@@ -301,7 +301,6 @@ class Attention(nn.Module):
                     self.rotary._sin_cached,
                 ), (None, None)
 
-        hidden_states = self.dropout(hidden_states)
         q: Tensor = self.q_proj(hidden_states)
         k: Tensor = self.k_proj(hidden_states)
         v: Tensor = self.v_proj(hidden_states)
