@@ -134,15 +134,17 @@ def step_model(
                 batch = batch.to(device)
                 out = None
                 if i % curr_grad_accum == 0:
-                    nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0, foreach=True)
                     out = proxy_model(batch.input_ids, labels=batch.input_ids)
+                    out['loss'].backward()
+                    nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0, foreach=True)
                     opt.zero_grad()
                     sched.step(step)
                     step += 1
                 else:
                     with proxy_model.no_sync():
                         out = proxy_model(batch.input_ids, labels=batch.input_ids)
-
+                        out['loss'].backward()
+                        
                 accum_loss.append(out["loss"].item())
 
                 input_ids = batch["input_ids"]
@@ -290,8 +292,7 @@ def train(
             weight_decay=1e-2,
             betas=(0.9, 0.999),
             fused=True,
-            #parameters_as_bucket_view=True,
-            overlap_with_ddp=True,
+            parameters_as_bucket_view=True,
         )
     else:
         opt = AdamW(
