@@ -260,16 +260,16 @@ class Attention(nn.Module):
         self.orient = orient
         self.dropout = MonteCarloDropout(dropout)
         self.q_proj = nn.Linear(
-            hidden_size, num_heads * head_size, dtype=torch.bfloat16
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
         )
         self.k_proj = nn.Linear(
-            hidden_size, num_heads * head_size, dtype=torch.bfloat16
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
         )
         self.v_proj = nn.Linear(
-            hidden_size, num_heads * head_size, dtype=torch.bfloat16
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
         )
         self.out_proj = nn.Linear(
-            num_heads * head_size, hidden_size, dtype=torch.bfloat16
+            num_heads * head_size, hidden_size, dtype=torch.bfloat16, bias=False
         )
         self.rotary = RotaryEmbedding(head_size)
 
