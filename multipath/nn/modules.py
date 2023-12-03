@@ -604,9 +604,9 @@ class Decoder(nn.Module):
         num_heads: int = 8,
         head_size: int = 128,
         dropout: float = 0.01,
-        outer_kv_dropout: float = 0.5,
+        outer_kv_dropout: float = 0.9,
         inter_kv_dropout: float = 0.5,
-        inner_kv_dropout: float = 0,
+        inner_kv_dropout: float = 0.5,
     ):
         super().__init__()
         self.hidden_size = hidden_size
