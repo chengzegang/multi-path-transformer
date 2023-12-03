@@ -354,26 +354,43 @@ class Attention(nn.Module):
             k = torch.cat([k_cache, k], dim=1)
             v = torch.cat([v_cache, v], dim=1)
         assert q is not None and k is not None and v is not None
-        qh = self._reshape_qkv(q)
-        kh = self._reshape_qkv(k)
-        vh = self._reshape_qkv(v)
 
-        qh, kh = self.rotary(qh, kh)
-
-        qh, kh, vh = self._pre_attention_permute(qh, kh, vh)
-
-        attn_scores = F.scaled_dot_product_attention(
-            qh,
-            kh,
-            vh,
-            is_causal=key_value_states is None and self.orient == "outer",
+        tdim = None
+        is_causal = False
+        if self.orient == "outer":
+            tdim = 1
+            is_causal = True
+        elif self.orient == "inter":
+            tdim = 2
+        else:
+            tdim = 3
+        qh = q.view(q.shape[0], q.shape[1], q.shape[2], -1, self.head_size).transpose(
+            tdim, -2
         )
+        kh = k.view(k.shape[0], k.shape[1], k.shape[2], -1, self.head_size).transpose(
+            tdim, -2
+        )
+        vh = v.view(v.shape[0], v.shape[1], v.shape[2], -1, self.head_size).transpose(
+            tdim, -2
+        )
+        qh = apply_rotary_pos_emb(
+            qh,
+            self.rotary._cos_cached,
+            self.rotary._sin_cached,
+        )
+        kh = apply_rotary_pos_emb(
+            kh,
+            self.rotary._cos_cached,
+            self.rotary._sin_cached,
+        )
+        qh = qh.unsqueeze(dim=tdim + 1)
+        kh = kh.unsqueeze(dim=tdim)
+        vh = vh.unsqueeze(dim=tdim)
+        o = F.scaled_dot_product_attention(qh, kh, vh, is_causal=is_causal)
+        o = o.mean(dim=tdim + 1).transpose(tdim, -2).flatten(-2)
+        o = self.out_proj(o)
 
-        attn_scores = self._post_attention_permute(attn_scores)
-
-        out = self.out_proj(attn_scores)
-
-        return out, (k.detach(), v.detach())
+        return o, (k.detach(), v.detach())
 
 
 class _DecoderLayer(nn.Module):
