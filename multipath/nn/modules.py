@@ -160,15 +160,19 @@ def fused_rotary_attention(
     q = F.linear(x, qw, qb)
     k = F.linear(x, kw, kb)
     v = F.linear(x, vw, vb)
+
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(dim, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(dim, -2)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    full_q = q
+    ind = torch.arange(q.shape[-2], device=q.device)
     if training:
-        ind = torch.randperm(k.shape[-2], device=k.device)[
-            : math.ceil((1 - kv_dropout) * k.shape[-2])
+        ind = torch.randperm(q.shape[-2], device=k.device)[
+            : math.ceil((1 - kv_dropout) * q.shape[-2])
         ]
+        q = q.index_select(-2, ind)
         k = k.index_select(-2, ind)
         v = v.index_select(-2, ind)
     q = q.unsqueeze(dim=dim + 1)
@@ -176,8 +180,11 @@ def fused_rotary_attention(
     v = v.unsqueeze(dim=dim)
 
     o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
+    o = o.mean(dim=dim + 1)
+    if training:
+        o = full_q.index_copy(-2, ind, o)
+    o = o.transpose(dim, -2).flatten(-2)
 
-    o = o.mean(dim=dim + 1).transpose(dim, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o
 
@@ -264,10 +271,13 @@ def fused_kvcache_rotary_attention(
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    full_q = q
+    ind = torch.arange(q.shape[-2], device=q.device)
     if training:
-        ind = torch.randperm(k.shape[-2], device=k.device)[
-            : math.ceil((1 - kv_dropout) * k.shape[-2])
+        ind = torch.randperm(q.shape[-2], device=k.device)[
+            : math.ceil((1 - kv_dropout) * q.shape[-2])
         ]
+        q = q.index_select(-2, ind)
         k = k.index_select(-2, ind)
         v = v.index_select(-2, ind)
     q = q.unsqueeze(dim=dim + 1)
@@ -275,8 +285,10 @@ def fused_kvcache_rotary_attention(
     v = v.unsqueeze(dim=dim)
 
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-
-    o = o.mean(dim=dim + 1).transpose(dim, -2).flatten(-2)
+    o = o.mean(dim=dim + 1)
+    if training:
+        o = full_q.index_copy(-2, ind, o)
+    o = o.transpose(dim, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o, (cache_k.detach(), cache_v.detach())
 
