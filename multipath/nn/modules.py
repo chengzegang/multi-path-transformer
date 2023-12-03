@@ -168,7 +168,7 @@ def fused_rotary_attention(
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
     full_q = q.clone()
     ind = torch.arange(q.shape[-2], device=q.device)
-    scale = 1 / math.sqrt(head_size)
+
     if training and kv_dropout > 0:
         ind = torch.randperm(q.shape[-2], device=k.device)[
             : math.ceil((1 - kv_dropout) * q.shape[-2])
@@ -179,12 +179,12 @@ def fused_rotary_attention(
         q = q.index_select(-2, ind)
         k = k.index_select(-2, ind_kv)
         v = v.index_select(-2, ind_kv)
-        scale = scale * (1 - kv_dropout) ** 2
+
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
 
-    o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, scale=scale)
+    o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
     o = o.mean(dim=dim + 1)
     if training and kv_dropout > 0:
         o = full_q.index_copy(-2, ind, o)
@@ -604,7 +604,7 @@ class Decoder(nn.Module):
         num_heads: int = 8,
         head_size: int = 128,
         dropout: float = 0.01,
-        outer_kv_dropout: float = 0.9,
+        outer_kv_dropout: float = 0.25,
         inter_kv_dropout: float = 0.5,
         inner_kv_dropout: float = 0.5,
     ):
