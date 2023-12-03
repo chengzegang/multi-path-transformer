@@ -343,7 +343,7 @@ class Attention(nn.Module):
         elif self.orient == "inter":
             tdim = 2
         else:
-            tdim = 3
+            raise ValueError(f"Invalid attention orientation: {self.orient}")
         if key_value_states is None or key_value_states[0] is None:
             return (
                 fused_rotary_attention(
@@ -413,7 +413,7 @@ class _DecoderLayer(nn.Module):
             return (
                 fused_decoder_layer(
                     self.norm.weight,
-                    1 if self.orient == "outer" else 2 if self.orient == "inter" else 3,
+                    1 if self.orient == "outer" else 2,
                     True if self.orient == "outer" else False,
                     self.head_size,
                     hidden_states,
@@ -435,7 +435,7 @@ class _DecoderLayer(nn.Module):
         else:
             return fused_kvcache_decoder_layer(
                 self.norm.weight,
-                1 if self.orient == "outer" else 2 if self.orient == "inter" else 3,
+                1 if self.orient == "outer" else 2,
                 True if self.orient == "outer" else False,
                 self.head_size,
                 key_value_states[0],
