@@ -7,6 +7,11 @@ from torch.utils.checkpoint import checkpoint
 import torch._dynamo
 
 torch._dynamo.config.suppress_errors = True
+_KVCT = Tuple[
+    Optional[Tuple[Tensor, Tensor]],
+    Optional[Tuple[Tensor, Tensor]],
+    Optional[Tuple[Tensor, Tensor]],
+]
 
 
 # @torch.compile(dynamic=False, mode="max-autotune")
@@ -334,7 +339,7 @@ class Attention(nn.Module):
         self,
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
-    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]] | Tensor:
+    ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
         tdim = None
         is_causal = False
 
@@ -346,23 +351,26 @@ class Attention(nn.Module):
         else:
             tdim = 3
         if self.training:
-            return fused_rotary_attention(
-                tdim,
-                is_causal,
-                self.head_size,
-                hidden_states,
-                self.q_proj.weight,
-                self.q_proj.bias,
-                self.k_proj.weight,
-                self.k_proj.bias,
-                self.v_proj.weight,
-                self.v_proj.bias,
-                self.out_proj.weight,
-                self.out_proj.bias,
-                self.rotary._cos_cached,
-                self.rotary._sin_cached,
-                self.dropout.p,
-            ), (None, None)
+            return (
+                fused_rotary_attention(
+                    tdim,
+                    is_causal,
+                    self.head_size,
+                    hidden_states,
+                    self.q_proj.weight,
+                    self.q_proj.bias,
+                    self.k_proj.weight,
+                    self.k_proj.bias,
+                    self.v_proj.weight,
+                    self.v_proj.bias,
+                    self.out_proj.weight,
+                    self.out_proj.bias,
+                    self.rotary._cos_cached,
+                    self.rotary._sin_cached,
+                    self.dropout.p,
+                ),
+                None,
+            )
         else:
             return fused_kvcache_rotary_attention(
                 tdim,
@@ -406,27 +414,30 @@ class _DecoderLayer(nn.Module):
         self,
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
-    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
         if key_value_states is None:
-            return fused_decoder_layer(
-                self.norm.weight,
-                1 if self.orient == "outer" else 2 if self.orient == "inter" else 3,
-                True if self.orient == "outer" else False,
-                self.head_size,
-                hidden_states,
-                self.attention.q_proj.weight,
-                self.attention.q_proj.bias,
-                self.attention.k_proj.weight,
-                self.attention.k_proj.bias,
-                self.attention.v_proj.weight,
-                self.attention.v_proj.bias,
-                self.attention.out_proj.weight,
-                self.attention.out_proj.bias,
-                self.attention.rotary._cos_cached,
-                self.attention.rotary._sin_cached,
-                self.norm.eps,
-                self.attention.dropout.p,
-            ), (None, None)
+            return (
+                fused_decoder_layer(
+                    self.norm.weight,
+                    1 if self.orient == "outer" else 2 if self.orient == "inter" else 3,
+                    True if self.orient == "outer" else False,
+                    self.head_size,
+                    hidden_states,
+                    self.attention.q_proj.weight,
+                    self.attention.q_proj.bias,
+                    self.attention.k_proj.weight,
+                    self.attention.k_proj.bias,
+                    self.attention.v_proj.weight,
+                    self.attention.v_proj.bias,
+                    self.attention.out_proj.weight,
+                    self.attention.out_proj.bias,
+                    self.attention.rotary._cos_cached,
+                    self.attention.rotary._sin_cached,
+                    self.norm.eps,
+                    self.attention.dropout.p,
+                ),
+                None,
+            )
         else:
             return fused_kvcache_decoder_layer(
                 self.norm.weight,
@@ -484,20 +495,14 @@ class DecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states: Tensor,
-        key_value_states: Optional[
-            Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]
-        ] = None,
-    ) -> Tuple[Tensor, Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]:
-        inter_key_value_states, outer_key_value_states = None, None
-        residual, outer_key_value_states = self.outer(
-            hidden_states, None if key_value_states is None else key_value_states[0]
-        )
-        residual, inter_key_value_states = self.inter(
-            residual, None if key_value_states is None else key_value_states[1]
-        )
-        residual, _ = self.inner(residual, None)
-        key_value_states = (inter_key_value_states, outer_key_value_states)
-        return residual, key_value_states
+        key_value_states: Optional[_KVCT] = None,
+    ) -> Tuple[Tensor, _KVCT]:
+        if key_value_states is None:
+            key_value_states = [None, None, None]
+        residual, kvc1 = self.outer(hidden_states, key_value_states[0])
+        residual, kvc2 = self.inter(residual, key_value_states[1])
+        residual, kvc3 = self.inner(residual, key_value_states[2])
+        return residual, (kvc1, kvc2, kvc3)
 
 
 class Decoder(nn.Module):
@@ -529,13 +534,9 @@ class Decoder(nn.Module):
     def forward(
         self,
         hidden_states: Tensor,
-        key_value_states: Optional[
-            List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]
-        ] = None,
-    ) -> Tuple[Tensor, List[Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]]]:
-        new_key_value_states: List[
-            Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]
-        ] = []
+        key_value_states: Optional[List[_KVCT]] = None,
+    ) -> Tuple[Tensor, List[_KVCT]]:
+        new_key_value_states: List[_KVCT] = []
         hidden_states = hidden_states.view(
             hidden_states.shape[0], hidden_states.shape[1], -1, self.hidden_size
         ).contiguous()
