@@ -3,16 +3,16 @@ name: webtext-500m
 data_name: webtext
 max_size: 512
 grad_accum: 1
-batch_size: 1
+batch_size: 16
 save_every: 10
 warmup_steps: 100
 lr: 3.0e-4
 num_workers: 16
 model_config:
-  bunch_size: 8
+  bunch_size: 2
   hidden_size: 512
-  num_layers: 24
-  num_heads: 8
+  num_layers: 20
+  num_heads: 4
   head_size: 64
 distributed: false
 ema: false
