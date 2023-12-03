@@ -262,36 +262,6 @@ class Attention(nn.Module):
         )
         self.rotary = RotaryEmbedding(head_size)
 
-    def _reshape_qkv(self, hidden_states: Tensor) -> Tensor:
-        return hidden_states.view(
-            hidden_states.shape[0],  # batch
-            hidden_states.shape[1],  # seq
-            hidden_states.shape[2],  # path
-            -1,
-            self.head_size,
-        )
-
-    def _pre_attention_permute_helper(self, hidden_states: Tensor) -> Tensor:
-        if self.orient == "outer":
-            return hidden_states.transpose(1, -2)
-        else:
-            return hidden_states.transpose(2, -2)
-
-    def _pre_attention_permute(
-        self, q: Tensor, k: Tensor, v: Tensor
-    ) -> Tuple[Tensor, Tensor, Tensor]:
-        return (
-            self._pre_attention_permute_helper(q),
-            self._pre_attention_permute_helper(k),
-            self._pre_attention_permute_helper(v),
-        )
-
-    def _post_attention_permute(self, hidden_states: Tensor) -> Tensor:
-        if self.orient == "outer":
-            return hidden_states.transpose(1, -2).flatten(-2)
-        else:
-            return hidden_states.transpose(2, -2).flatten(-2)
-
     def forward(
         self,
         hidden_states: Tensor,
