@@ -135,8 +135,8 @@ class MonteCarloDropout(nn.Module):
 def factorize_head(q: Tensor, k: Tensor, v: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
     num_heads = q.shape[-2]
     q = q.repeat_interleave(num_heads, dim=-2)
-    k = k.repeat(1, 1, 1, num_heads, 1)
-    v = v.repeat(1, 1, 1, num_heads, 1)
+    k = k.expand(-1, -1, -1, num_heads, -1)
+    v = v.expand(-1, -1, -1, num_heads, -1)
     return q, k, v
 
 

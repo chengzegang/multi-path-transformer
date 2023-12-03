@@ -42,5 +42,5 @@ singularity exec --nv \
     		--rdzv-backend=c10d \\
     		--rdzv-endpoint=$MASTER_ADDR \\
     		--max-restarts=3 \\
-    		cli.py configs/500m-pile-4a100-80gb.yml"
+    		cli.py configs/500m-pile-1a100-80gb.yml"
 
