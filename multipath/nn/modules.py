@@ -131,6 +131,23 @@ class MonteCarloDropout(nn.Module):
         return x
 
 
+@torch.jit.script
+def factorize_head(q: Tensor, k: Tensor, v: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    num_heads = q.shape[-2]
+    q = q.repeat_interleave(num_heads, dim=-2)
+    k = k.repeat(1, 1, 1, num_heads, 1)
+    v = v.repeat(1, 1, 1, num_heads, 1)
+    return q, k, v
+
+
+@torch.jit.script
+def defactorize_head(o: Tensor) -> Tensor:
+    num_heads = int(math.sqrt(o.shape[-2]))
+    return o.view(o.shape[0], o.shape[1], o.shape[2], -1, num_heads, o.shape[-1]).mean(
+        dim=-2
+    )
+
+
 # @torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_outer_rotary_attention(
@@ -153,9 +170,11 @@ def fused_outer_rotary_attention(
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(1, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(1, -2)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(1, -2)
+    q, k, v = factorize_head(q, k, v)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+    o = defactorize_head(o)
     o = o.transpose(1, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o
@@ -183,9 +202,11 @@ def fused_inter_rotary_attention(
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(2, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(2, -2)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(2, -2)
+    q, k, v = factorize_head(q, k, v)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+    o = defactorize_head(o)
     o = o.transpose(2, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o
@@ -214,9 +235,11 @@ def fused_inner_rotary_attention(
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size)
+    q, k, v = factorize_head(q, k, v)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+    o = defactorize_head(o)
     o = o.flatten(-2)
     o = F.linear(o, ow, ob)
     return o
