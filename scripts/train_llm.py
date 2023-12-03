@@ -123,7 +123,7 @@ def step_model(
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(proxy_model)
-    target_num_tokens_per_batch = 1024 * 1024
+    target_num_tokens_per_batch = 512 * 512
     world_size = int(os.getenv("WORLD_SIZE", 1))
     target_grad_accum = (
         target_num_tokens_per_batch // num_tokens_per_batch // world_size
@@ -359,7 +359,7 @@ def train(
     num_tokens_per_batch = batch_size * max_size
     if local_rank == 0:
         pbar = tqdm(total=total_tokens, dynamic_ncols=True, unit_scale=True)
-        pbar.update(step * 512 * 1024 * world_size)
+        pbar.update(step * 512 * 512 * world_size)
     iteration = step_model(
         device,
         dl,
