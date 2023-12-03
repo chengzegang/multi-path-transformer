@@ -136,7 +136,7 @@ class MonteCarloDropout(nn.Module):
         return x
 
 
-# @torch.compile(dynamic=False, mode="max-autotune")
+@torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_rotary_attention(
     dim: int,
@@ -175,6 +175,7 @@ def fused_rotary_attention(
     return o
 
 
+@torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_decoder_layer(
     norm_weight: Tensor,
@@ -218,6 +219,7 @@ def fused_decoder_layer(
     return x
 
 
+@torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_kvcache_rotary_attention(
     dim: int,
@@ -262,6 +264,7 @@ def fused_kvcache_rotary_attention(
     return o, (cache_k.detach(), cache_v.detach())
 
 
+@torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_kvcache_decoder_layer(
     norm_weight: Tensor,
