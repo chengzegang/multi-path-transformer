@@ -133,7 +133,9 @@ class MonteCarloDropout(nn.Module):
 
 # @torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
-def fused_outer_rotary_attention(
+def fused_rotary_attention(
+    dim: int,
+    is_causal: bool,
     head_size: int,
     x: Tensor,
     qw: Tensor,
@@ -146,29 +148,33 @@ def fused_outer_rotary_attention(
     ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
+    dropout: float = 0.01,
 ) -> Tensor:
+    x = F.dropout(x, dropout, True)
     q = F.linear(x, qw, qb)
     k = F.linear(x, kw, kb)
     v = F.linear(x, vw, vb)
-    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(1, -2)
-    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(1, -2)
-    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(1, -2)
+    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(dim, -2)
+    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(dim, -2)
+    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
-    q = q.unsqueeze(dim=2)
-    k = k.unsqueeze(dim=1)
-    v = v.unsqueeze(dim=1)
+    q = q.unsqueeze(dim=dim + 1)
+    k = k.unsqueeze(dim=dim)
+    v = v.unsqueeze(dim=dim)
 
-    o = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+    o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
 
-    o = o.mean(dim=2).transpose(1, -2).flatten(-2)
+    o = o.mean(dim=dim + 1).transpose(dim, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o
 
 
-# @torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
-def fused_inter_rotary_attention(
+def fused_decoder_layer(
+    norm_weight: Tensor,
+    dim: int,
+    is_causal: bool,
     head_size: int,
     x: Tensor,
     qw: Tensor,
@@ -181,29 +187,38 @@ def fused_inter_rotary_attention(
     ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
+    eps: float = 1e-6,
+    dropout: float = 0.01,
 ) -> Tensor:
-    q = F.linear(x, qw, qb)
-    k = F.linear(x, kw, kb)
-    v = F.linear(x, vw, vb)
-    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(2, -2)
-    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(2, -2)
-    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(2, -2)
-    q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
-    k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
-    q = q.unsqueeze(dim=3)
-    k = k.unsqueeze(dim=2)
-    v = v.unsqueeze(dim=2)
-    o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-    o = o.mean(dim=3).transpose(2, -2).flatten(-2)
+    residual = x
+    x = fused_msnorm(x, norm_weight, eps)
+    x = fused_rotary_attention(
+        dim,
+        is_causal,
+        head_size,
+        x,
+        qw,
+        qb,
+        kw,
+        kb,
+        vw,
+        vb,
+        ow,
+        ob,
+        rotery_cos,
+        rotery_sin,
+        dropout,
+    )
+    x = residual + x
+    return x
 
-    o = F.linear(o, ow, ob)
-    return o
 
-
-# @torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
-def fused_inner_rotary_attention(
+def fused_kvcache_rotary_attention(
+    dim: int,
     head_size: int,
+    cache_k: Optional[Tensor],
+    cache_v: Optional[Tensor],
     x: Tensor,
     qw: Tensor,
     qb: Optional[Tensor],
@@ -215,23 +230,76 @@ def fused_inner_rotary_attention(
     ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
-) -> Tensor:
+    dropout: float = 0.01,
+) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    x = F.dropout(x, dropout, True)
     q = F.linear(x, qw, qb)
     k = F.linear(x, kw, kb)
     v = F.linear(x, vw, vb)
-
-    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size)
-    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size)
-    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size)
+    if cache_k is not None and cache_v is not None:
+        k = torch.cat([cache_k, k], dim=1)
+        v = torch.cat([cache_v, v], dim=1)
+    cache_k = k
+    cache_v = v
+    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(dim, -2)
+    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(dim, -2)
+    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
-    q = q.unsqueeze(dim=4)
-    k = k.unsqueeze(dim=3)
-    v = v.unsqueeze(dim=3)
+    q = q.unsqueeze(dim=dim + 1)
+    k = k.unsqueeze(dim=dim)
+    v = v.unsqueeze(dim=dim)
+
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-    o = o.mean(dim=4).flatten(-2)
+
+    o = o.mean(dim=dim + 1).transpose(dim, -2).flatten(-2)
     o = F.linear(o, ow, ob)
-    return o
+    return o, (cache_k.detach(), cache_v.detach())
+
+
+@torch.jit.script
+def fused_kvcache_decoder_layer(
+    norm_weight: Tensor,
+    dim: int,
+    head_size: int,
+    cache_k: Optional[Tensor],
+    cache_v: Optional[Tensor],
+    x: Tensor,
+    qw: Tensor,
+    qb: Optional[Tensor],
+    kw: Tensor,
+    kb: Optional[Tensor],
+    vw: Tensor,
+    vb: Optional[Tensor],
+    ow: Tensor,
+    ob: Optional[Tensor],
+    rotery_cos: Tensor,
+    rotery_sin: Tensor,
+    eps: float = 1e-6,
+    dropout: float = 0.01,
+) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    residual = x
+    x = fused_msnorm(x, norm_weight, eps)
+    x, kv_cache = fused_kvcache_rotary_attention(
+        dim,
+        head_size,
+        cache_k,
+        cache_v,
+        x,
+        qw,
+        qb,
+        kw,
+        kb,
+        vw,
+        vb,
+        ow,
+        ob,
+        rotery_cos,
+        rotery_sin,
+        dropout,
+    )
+    x = residual + x
+    return x, kv_cache
 
 
 class Attention(nn.Module):
@@ -267,66 +335,9 @@ class Attention(nn.Module):
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]] | Tensor:
-        hidden_states = self.dropout(hidden_states)
-        if self.training:
-            if self.orient == "outer":
-                return fused_outer_rotary_attention(
-                    self.head_size,
-                    hidden_states,
-                    self.q_proj.weight,
-                    self.q_proj.bias,
-                    self.k_proj.weight,
-                    self.k_proj.bias,
-                    self.v_proj.weight,
-                    self.v_proj.bias,
-                    self.out_proj.weight,
-                    self.out_proj.bias,
-                    self.rotary._cos_cached,
-                    self.rotary._sin_cached,
-                ), (None, None)
-            elif self.orient == "inter":
-                return fused_inter_rotary_attention(
-                    self.head_size,
-                    hidden_states,
-                    self.q_proj.weight,
-                    self.q_proj.bias,
-                    self.k_proj.weight,
-                    self.k_proj.bias,
-                    self.v_proj.weight,
-                    self.v_proj.bias,
-                    self.out_proj.weight,
-                    self.out_proj.bias,
-                    self.rotary._cos_cached,
-                    self.rotary._sin_cached,
-                ), (None, None)
-            else:
-                return fused_inner_rotary_attention(
-                    self.head_size,
-                    hidden_states,
-                    self.q_proj.weight,
-                    self.q_proj.bias,
-                    self.k_proj.weight,
-                    self.k_proj.bias,
-                    self.v_proj.weight,
-                    self.v_proj.bias,
-                    self.out_proj.weight,
-                    self.out_proj.bias,
-                    self.rotary._cos_cached,
-                    self.rotary._sin_cached,
-                ), (None, None)
-
-        q: Tensor = self.q_proj(hidden_states)
-        k: Tensor = self.k_proj(hidden_states)
-        v: Tensor = self.v_proj(hidden_states)
-
-        if key_value_states is not None:
-            k_cache, v_cache = key_value_states
-            k = torch.cat([k_cache, k], dim=1)
-            v = torch.cat([v_cache, v], dim=1)
-        assert q is not None and k is not None and v is not None
-
         tdim = None
         is_causal = False
+
         if self.orient == "outer":
             tdim = 1
             is_causal = True
@@ -334,33 +345,43 @@ class Attention(nn.Module):
             tdim = 2
         else:
             tdim = 3
-        qh = q.view(q.shape[0], q.shape[1], q.shape[2], -1, self.head_size).transpose(
-            tdim, -2
-        )
-        kh = k.view(k.shape[0], k.shape[1], k.shape[2], -1, self.head_size).transpose(
-            tdim, -2
-        )
-        vh = v.view(v.shape[0], v.shape[1], v.shape[2], -1, self.head_size).transpose(
-            tdim, -2
-        )
-        qh = apply_rotary_pos_emb(
-            qh,
-            self.rotary._cos_cached,
-            self.rotary._sin_cached,
-        )
-        kh = apply_rotary_pos_emb(
-            kh,
-            self.rotary._cos_cached,
-            self.rotary._sin_cached,
-        )
-        qh = qh.unsqueeze(dim=tdim + 1)
-        kh = kh.unsqueeze(dim=tdim)
-        vh = vh.unsqueeze(dim=tdim)
-        o = F.scaled_dot_product_attention(qh, kh, vh, is_causal=is_causal)
-        o = o.mean(dim=tdim + 1).transpose(tdim, -2).flatten(-2)
-        o = self.out_proj(o)
-
-        return o, (k.detach(), v.detach())
+        if self.training:
+            return fused_rotary_attention(
+                tdim,
+                is_causal,
+                self.head_size,
+                hidden_states,
+                self.q_proj.weight,
+                self.q_proj.bias,
+                self.k_proj.weight,
+                self.k_proj.bias,
+                self.v_proj.weight,
+                self.v_proj.bias,
+                self.out_proj.weight,
+                self.out_proj.bias,
+                self.rotary._cos_cached,
+                self.rotary._sin_cached,
+                self.dropout.p,
+            ), (None, None)
+        else:
+            return fused_kvcache_rotary_attention(
+                tdim,
+                self.head_size,
+                key_value_states[0],
+                key_value_states[1],
+                hidden_states,
+                self.q_proj.weight,
+                self.q_proj.bias,
+                self.k_proj.weight,
+                self.k_proj.bias,
+                self.v_proj.weight,
+                self.v_proj.bias,
+                self.out_proj.weight,
+                self.out_proj.bias,
+                self.rotary._cos_cached,
+                self.rotary._sin_cached,
+                self.dropout.p,
+            )
 
 
 class _DecoderLayer(nn.Module):
@@ -373,6 +394,11 @@ class _DecoderLayer(nn.Module):
         orient: str = "outer",
     ):
         super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.dropout = dropout
+        self.orient = orient
         self.norm = MSNorm(hidden_size)
         self.attention = Attention(hidden_size, num_heads, head_size, orient, dropout)
 
@@ -381,14 +407,48 @@ class _DecoderLayer(nn.Module):
         hidden_states: Tensor,
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
-        residual = hidden_states
-        hidden_states = self.norm(residual)
-        hidden_states, key_value_states = self.attention(
-            hidden_states,
-            None if key_value_states is None else key_value_states,
-        )
-        residual = residual + hidden_states
-        return residual, key_value_states
+        if key_value_states is None:
+            return fused_decoder_layer(
+                self.norm.weight,
+                1 if self.orient == "outer" else 2 if self.orient == "inter" else 3,
+                True if self.orient == "outer" else False,
+                self.head_size,
+                hidden_states,
+                self.attention.q_proj.weight,
+                self.attention.q_proj.bias,
+                self.attention.k_proj.weight,
+                self.attention.k_proj.bias,
+                self.attention.v_proj.weight,
+                self.attention.v_proj.bias,
+                self.attention.out_proj.weight,
+                self.attention.out_proj.bias,
+                self.attention.rotary._cos_cached,
+                self.attention.rotary._sin_cached,
+                self.norm.eps,
+                self.attention.dropout.p,
+            ), (None, None)
+        else:
+            return fused_kvcache_decoder_layer(
+                self.norm.weight,
+                1 if self.orient == "outer" else 2 if self.orient == "inter" else 3,
+                True if self.orient == "outer" else False,
+                self.head_size,
+                key_value_states[0],
+                key_value_states[1],
+                hidden_states,
+                self.attention.q_proj.weight,
+                self.attention.q_proj.bias,
+                self.attention.k_proj.weight,
+                self.attention.k_proj.bias,
+                self.attention.v_proj.weight,
+                self.attention.v_proj.bias,
+                self.attention.out_proj.weight,
+                self.attention.out_proj.bias,
+                self.attention.rotary._cos_cached,
+                self.attention.rotary._sin_cached,
+                self.norm.eps,
+                self.attention.dropout.p,
+            )
 
 
 class DecoderOuterLayer(_DecoderLayer):

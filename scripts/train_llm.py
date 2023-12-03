@@ -159,9 +159,9 @@ def step_model(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{curr_grad_accum}"
                 )
                 pbar.update(torch.numel(input_ids) * world_size)
-                wandb.log({'tokens': pbar.n}, step=step)
+                wandb.log({"tokens": pbar.n}, step=step)
             if len(accum_loss) % curr_grad_accum == 0:
-                nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0)
+                nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
                     avg_model.update_parameters(proxy_model)
