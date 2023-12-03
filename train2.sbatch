@@ -7,8 +7,8 @@
 #SBATCH --time=48:00:00
 #SBATCH --mem=128GB 
 #SBATCH --gres=gpu:a100:1
-#SBATCH --job-name=llm
-#SBATCH --output=llm.out
+#SBATCH --job-name=llm2
+#SBATCH --output=llm2.out
 
 # To use torch.compile
 
@@ -42,5 +42,5 @@ singularity exec --nv \
     		--rdzv-backend=c10d \\
     		--rdzv-endpoint=$MASTER_ADDR \\
     		--max-restarts=3 \\
-    		cli.py configs/500m-pile-1a100-80gb.yml"
+    		cli.py configs/100m-pile-1a100-80gb.yml"
 
