@@ -521,7 +521,6 @@ class DecoderLayer(nn.Module):
             hidden_size,
             num_heads,
             head_size,
-            dropout,
         )
 
     def forward(
