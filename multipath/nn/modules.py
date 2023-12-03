@@ -166,9 +166,10 @@ def fused_rotary_attention(
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
-    full_q = q
+    full_q = q.clone()
     ind = torch.arange(q.shape[-2], device=q.device)
-    if training:
+    scale = 1 / math.sqrt(head_size)
+    if training and kv_dropout > 0:
         ind = torch.randperm(q.shape[-2], device=k.device)[
             : math.ceil((1 - kv_dropout) * q.shape[-2])
         ].sort()[0]
@@ -178,13 +179,14 @@ def fused_rotary_attention(
         q = q.index_select(-2, ind)
         k = k.index_select(-2, ind_kv)
         v = v.index_select(-2, ind_kv)
+        scale = scale * (1 - kv_dropout) ** 2
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
 
-    o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
+    o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal, scale=scale)
     o = o.mean(dim=dim + 1)
-    if training:
+    if training and kv_dropout > 0:
         o = full_q.index_copy(-2, ind, o)
     o = o.transpose(dim, -2).flatten(-2)
 
@@ -274,9 +276,9 @@ def fused_kvcache_rotary_attention(
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
-    full_q = q
+    full_q = torch.zeros_like(q)
     ind = torch.arange(q.shape[-2], device=q.device)
-    if training:
+    if training and kv_dropout > 0:
         ind = torch.randperm(q.shape[-2], device=q.device)[
             : math.ceil((1 - kv_dropout) * q.shape[-2])
         ].sort()[0]
@@ -292,7 +294,7 @@ def fused_kvcache_rotary_attention(
 
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
     o = o.mean(dim=dim + 1)
-    if training:
+    if training and kv_dropout > 0:
         o = full_q.index_copy(-2, ind, o)
     o = o.transpose(dim, -2).flatten(-2)
     o = F.linear(o, ow, ob)
@@ -552,7 +554,7 @@ class DecoderInnerLayer(_DecoderLayer):
         num_heads: int,
         head_size: int,
         dropout: float = 0.01,
-        kv_dropout: float = 0.5,
+        kv_dropout: float = 0,
     ):
         super().__init__(
             hidden_size, num_heads, head_size, dropout, "inner", kv_dropout
@@ -602,9 +604,9 @@ class Decoder(nn.Module):
         num_heads: int = 8,
         head_size: int = 128,
         dropout: float = 0.01,
-        outer_kv_dropout: float = 0.9,
+        outer_kv_dropout: float = 0.5,
         inter_kv_dropout: float = 0.5,
-        inner_kv_dropout: float = 0.5,
+        inner_kv_dropout: float = 0,
     ):
         super().__init__()
         self.hidden_size = hidden_size

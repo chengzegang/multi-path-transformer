@@ -134,7 +134,7 @@ def step_model(
         last_accum_steps=target_grad_accum,
     )
     curr_grad_accum = grad_accum
-
+    eval_loss = 0
     for epoch in range(num_epochs):
         accum_loss = []
 
@@ -156,7 +156,7 @@ def step_model(
             output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
                 pbar.set_description(
-                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{curr_grad_accum}"
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, eval_loss: {eval_loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{curr_grad_accum}"
                 )
                 pbar.update(torch.numel(input_ids) * world_size)
                 wandb.log({"tokens": pbar.n}, step=step)
@@ -172,15 +172,15 @@ def step_model(
                 proxy_model.eval()
                 with torch.no_grad():
                     out = proxy_model(batch.input_ids[[0]], labels=batch.input_ids[[0]])
-                    input_ids = batch["input_ids"]
-                    output_ids = out["logits"]
-                    wandb.log({"eval_loss": out["loss"].item()}, step=step)
+                    eval_output_ids = out["logits"]
+                    eval_loss = out["loss"].item()
+                    wandb.log({"eval_loss": eval_loss}, step=step)
                 avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
-                yield epoch, step, avg_loss, input_ids, output_ids
+                yield epoch, step, avg_loss, input_ids, output_ids, eval_output_ids
 
                 curr_grad_accum = schedule_grad_accum(step)
-        yield epoch, step, accum_loss, input_ids, output_ids
+        yield epoch, step, accum_loss, input_ids, output_ids, eval_output_ids
 
 
 def num_params(model: nn.Module) -> str:
@@ -382,14 +382,20 @@ def train(
         num_tokens_per_batch,
     )
 
-    for epoch, step, loss, input_ids, output_ids in iteration:
+    for epoch, step, loss, input_ids, output_ids, eval_output_ids in iteration:
         if local_rank == 0:
             in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
-            out_text = tokenizer.decode(
+            train_out_text = tokenizer.decode(
                 output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
             )
-            pbar.write(f"IN : {in_text[:256]}...")
-            pbar.write(f"OUT: {out_text[:256]}...")
+            eval_out_text = tokenizer.decode(
+                eval_output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
+            )
+            pbar.write("=" * 64)
+            pbar.write(f"INPUT       : {repr(in_text[:64])}...")
+            pbar.write(f"TRAIN OUTPUT: {repr(train_out_text[:64])}...")
+            pbar.write(f"EVAL OUT    : {repr(eval_out_text[:64])}...")
+            pbar.write("=" * 64)
             wandb.log(
                 {
                     "loss": loss,
