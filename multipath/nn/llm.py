@@ -141,8 +141,9 @@ def _wrapped_forward(mod: nn.Module, *args, **kwargs):
         return mod._org_forward(*args, **kwargs)
 
 
-def add_gradient_checkpoint(model: LLM):
-    for layer in model.decoder.layers:
+def add_gradient_checkpoint(model: LLM, splits: int = 4):
+    for i in range(0, len(model.decoder.layers), len(model.decoder.layers) // splits):
+        layer = model.decoder.layers[i]
         layer._org_forward = layer.forward
         layer.forward = partial(_wrapped_forward, layer)
     return model
