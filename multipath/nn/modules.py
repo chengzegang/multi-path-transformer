@@ -131,23 +131,6 @@ class MonteCarloDropout(nn.Module):
         return x
 
 
-@torch.jit.script
-def factorize_head(q: Tensor, k: Tensor, v: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
-    num_heads = q.shape[-2]
-    q = q.repeat_interleave(num_heads, dim=-2)
-    k = k.expand(-1, -1, -1, num_heads, -1)
-    v = v.expand(-1, -1, -1, num_heads, -1)
-    return q, k, v
-
-
-@torch.jit.script
-def defactorize_head(o: Tensor) -> Tensor:
-    num_heads = int(math.sqrt(o.shape[-2]))
-    return o.view(o.shape[0], o.shape[1], o.shape[2], -1, num_heads, o.shape[-1]).mean(
-        dim=-2
-    )
-
-
 # @torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
 def fused_outer_rotary_attention(
