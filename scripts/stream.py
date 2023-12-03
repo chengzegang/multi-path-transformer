@@ -9,12 +9,11 @@ import glob
 @torch.inference_mode()
 def stream(model_id: str, query: str):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-
     model_config = {
         "bunch_size": 8,
         "hidden_size": 512,
-        "num_layers": 80,
-        "num_heads": 16,
+        "num_layers": 24,
+        "num_heads": 8,
         "head_size": 64,
     }
 
