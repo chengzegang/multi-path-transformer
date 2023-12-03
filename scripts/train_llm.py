@@ -123,7 +123,7 @@ def step_model(
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(proxy_model)
-    target_num_tokens_per_batch = 512 * 512
+    target_num_tokens_per_batch = 1024 * 1024
     world_size = int(os.getenv("WORLD_SIZE", 1))
     target_grad_accum = (
         target_num_tokens_per_batch // num_tokens_per_batch // world_size
@@ -159,6 +159,7 @@ def step_model(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{curr_grad_accum}"
                 )
                 pbar.update(torch.numel(input_ids) * world_size)
+                wandb.log({'tokens': pbar.n}, step=step)
             if len(accum_loss) % curr_grad_accum == 0:
                 nn.utils.clip_grad_norm_(proxy_model.parameters(), 1.0)
                 opt.step()
