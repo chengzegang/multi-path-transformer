@@ -171,10 +171,13 @@ def fused_rotary_attention(
     if training:
         ind = torch.randperm(q.shape[-2], device=k.device)[
             : math.ceil((1 - kv_dropout) * q.shape[-2])
-        ]
+        ].sort()[0]
+        ind_kv = torch.randperm(k.shape[-2], device=k.device)[
+            : math.ceil((1 - kv_dropout) * k.shape[-2])
+        ].sort()[0]
         q = q.index_select(-2, ind)
-        k = k.index_select(-2, ind)
-        v = v.index_select(-2, ind)
+        k = k.index_select(-2, ind_kv)
+        v = v.index_select(-2, ind_kv)
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
@@ -274,12 +277,15 @@ def fused_kvcache_rotary_attention(
     full_q = q
     ind = torch.arange(q.shape[-2], device=q.device)
     if training:
-        ind = torch.randperm(q.shape[-2], device=k.device)[
+        ind = torch.randperm(q.shape[-2], device=q.device)[
             : math.ceil((1 - kv_dropout) * q.shape[-2])
-        ]
+        ].sort()[0]
+        ind_kv = torch.randperm(k.shape[-2], device=k.device)[
+            : math.ceil((1 - kv_dropout) * k.shape[-2])
+        ].sort()[0]
         q = q.index_select(-2, ind)
-        k = k.index_select(-2, ind)
-        v = v.index_select(-2, ind)
+        k = k.index_select(-2, ind_kv)
+        v = v.index_select(-2, ind_kv)
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
@@ -389,7 +395,7 @@ class Attention(nn.Module):
             tdim = 2
         else:
             tdim = 3
-        if self.training:
+        if key_value_states is None:
             return (
                 fused_rotary_attention(
                     tdim,
@@ -532,7 +538,7 @@ class DecoderInterLayer(_DecoderLayer):
         num_heads: int,
         head_size: int,
         dropout: float = 0.01,
-        kv_dropout: float = 0.9,
+        kv_dropout: float = 0.5,
     ):
         super().__init__(
             hidden_size, num_heads, head_size, dropout, "inter", kv_dropout
@@ -546,7 +552,7 @@ class DecoderInnerLayer(_DecoderLayer):
         num_heads: int,
         head_size: int,
         dropout: float = 0.01,
-        kv_dropout: float = 0.9,
+        kv_dropout: float = 0.5,
     ):
         super().__init__(
             hidden_size, num_heads, head_size, dropout, "inner", kv_dropout
@@ -560,17 +566,19 @@ class DecoderLayer(nn.Module):
         num_heads: int,
         head_size: int,
         dropout: float = 0.0,
-        kv_dropout: float = 0.9,
+        outer_kv_dropout: float = 0.9,
+        inter_kv_dropout: float = 0.5,
+        inner_kv_dropout: float = 0.5,
     ):
         super().__init__()
         self.outer = DecoderOuterLayer(
-            hidden_size, num_heads, head_size, dropout, kv_dropout
+            hidden_size, num_heads, head_size, dropout, outer_kv_dropout
         )
         self.inter = DecoderInterLayer(
-            hidden_size, num_heads, head_size, dropout, kv_dropout
+            hidden_size, num_heads, head_size, dropout, inter_kv_dropout
         )
         self.inner = DecoderInnerLayer(
-            hidden_size, num_heads, head_size, dropout, kv_dropout
+            hidden_size, num_heads, head_size, dropout, inner_kv_dropout
         )
 
     def forward(
@@ -594,7 +602,9 @@ class Decoder(nn.Module):
         num_heads: int = 8,
         head_size: int = 128,
         dropout: float = 0.01,
-        kv_dropout: float = 0.9,
+        outer_kv_dropout: float = 0.9,
+        inter_kv_dropout: float = 0.5,
+        inner_kv_dropout: float = 0.5,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -607,7 +617,9 @@ class Decoder(nn.Module):
                     num_heads=num_heads,
                     head_size=head_size,
                     dropout=dropout,
-                    kv_dropout=kv_dropout,
+                    outer_kv_dropout=outer_kv_dropout,
+                    inter_kv_dropout=inter_kv_dropout,
+                    inner_kv_dropout=inner_kv_dropout,
                 )
                 for _ in range(num_layers)
             ]

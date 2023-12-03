@@ -78,7 +78,7 @@ class LLM(nn.Module):
     ):
         pred_logits = None
         loss = None
-        if self.training:
+        if labels is not None:
             pred_logits = self._forward(input_ids)
             if labels is not None:
                 target = labels[:, 1:].reshape(-1)

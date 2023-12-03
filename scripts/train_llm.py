@@ -169,6 +169,12 @@ def step_model(
                 sched.step(step)
                 opt.zero_grad()
                 step += 1
+                proxy_model.eval()
+                with torch.no_grad():
+                    out = proxy_model(batch.input_ids[[0]], labels=batch.input_ids[[0]])
+                    input_ids = batch["input_ids"]
+                    output_ids = out["logits"]
+                    wandb.log({"eval_loss": out["loss"].item()}, step=step)
                 avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
                 yield epoch, step, avg_loss, input_ids, output_ids
