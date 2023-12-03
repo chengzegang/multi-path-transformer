@@ -1,7 +1,7 @@
 root: none
 name: webtext-500m
 data_name: webtext
-max_size: 1024
+max_size: 512
 grad_accum: 1
 batch_size: 1
 save_every: 10
