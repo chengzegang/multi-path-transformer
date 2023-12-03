@@ -346,7 +346,7 @@ class Attention(nn.Module):
             tdim = 2
         else:
             tdim = 3
-        if key_value_states is None:
+        if key_value_states is None or key_value_states[0] is None:
             return (
                 fused_rotary_attention(
                     tdim,
