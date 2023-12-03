@@ -165,12 +165,8 @@ def fused_rotary_attention(
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
 
-    # q = q.unsqueeze(dim=dim + 1)
-    # k = k.unsqueeze(dim=dim)
-    # v = v.unsqueeze(dim=dim)
-
     o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
-    # o = o.mean(dim=dim + 1)
+
     o = o.transpose(dim, -2).flatten(-2)
 
     o = F.linear(o, ow, ob)
@@ -254,12 +250,7 @@ def fused_kvcache_rotary_attention(
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
 
-    # q = q.unsqueeze(dim=dim + 1)
-    # k = k.unsqueeze(dim=dim)
-    # v = v.unsqueeze(dim=dim)
-
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-    # o = o.mean(dim=dim + 1)
     o = o.transpose(dim, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o, (cache_k.detach(), cache_v.detach())
