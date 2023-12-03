@@ -153,8 +153,6 @@ def fused_rotary_attention(
     rotery_cos: Tensor,
     rotery_sin: Tensor,
     dropout: float = 0.01,
-    training: bool = True,
-    kv_dropout: float = 0.9,
 ) -> Tensor:
     x = F.dropout(x, dropout, True)
     q = F.linear(x, qw, qb)
@@ -166,29 +164,13 @@ def fused_rotary_attention(
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
-    full_q = q.clone()
-    ind = torch.arange(q.shape[-2], device=q.device)
-
-    if training and kv_dropout > 0:
-        ind = torch.randperm(q.shape[-2], device=k.device)[
-            : math.ceil((1 - kv_dropout) * q.shape[-2])
-        ].sort()[0]
-        ind_kv = torch.randperm(k.shape[-2], device=k.device)[
-            : math.ceil((1 - kv_dropout) * k.shape[-2])
-        ].sort()[0]
-        q = q.index_select(-2, ind)
-        k = k.index_select(-2, ind_kv)
-        v = v.index_select(-2, ind_kv)
 
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
 
     o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
-    o = o.mean(dim=dim + 1)
-    if training and kv_dropout > 0:
-        o = full_q.index_copy(-2, ind, o)
-    o = o.transpose(dim, -2).flatten(-2)
+    o = o.mean(dim=dim + 1).transpose(dim, -2).flatten(-2)
 
     o = F.linear(o, ow, ob)
     return o
@@ -213,8 +195,6 @@ def fused_decoder_layer(
     rotery_sin: Tensor,
     eps: float = 1e-6,
     dropout: float = 0.01,
-    training: bool = True,
-    kv_dropout: float = 0.9,
 ) -> Tensor:
     residual = x
     x = fused_msnorm(x, norm_weight, eps)
@@ -234,8 +214,6 @@ def fused_decoder_layer(
         rotery_cos,
         rotery_sin,
         dropout,
-        training,
-        kv_dropout,
     )
     x = residual + x
     return x
@@ -259,8 +237,6 @@ def fused_kvcache_rotary_attention(
     rotery_cos: Tensor,
     rotery_sin: Tensor,
     dropout: float = 0.01,
-    training: bool = True,
-    kv_dropout: float = 0.9,
 ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     x = F.dropout(x, dropout, True)
     q = F.linear(x, qw, qb)
@@ -276,27 +252,13 @@ def fused_kvcache_rotary_attention(
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
-    full_q = torch.zeros_like(q)
-    ind = torch.arange(q.shape[-2], device=q.device)
-    if training and kv_dropout > 0:
-        ind = torch.randperm(q.shape[-2], device=q.device)[
-            : math.ceil((1 - kv_dropout) * q.shape[-2])
-        ].sort()[0]
-        ind_kv = torch.randperm(k.shape[-2], device=k.device)[
-            : math.ceil((1 - kv_dropout) * k.shape[-2])
-        ].sort()[0]
-        q = q.index_select(-2, ind)
-        k = k.index_select(-2, ind_kv)
-        v = v.index_select(-2, ind_kv)
+
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
 
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-    o = o.mean(dim=dim + 1)
-    if training and kv_dropout > 0:
-        o = full_q.index_copy(-2, ind, o)
-    o = o.transpose(dim, -2).flatten(-2)
+    o = o.mean(dim=dim + 1).transpose(dim, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o, (cache_k.detach(), cache_v.detach())
 
@@ -321,8 +283,6 @@ def fused_kvcache_decoder_layer(
     rotery_sin: Tensor,
     eps: float = 1e-6,
     dropout: float = 0.01,
-    training: bool = True,
-    kv_dropout: float = 0.9,
 ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     residual = x
     x = fused_msnorm(x, norm_weight, eps)
@@ -343,8 +303,6 @@ def fused_kvcache_decoder_layer(
         rotery_cos,
         rotery_sin,
         dropout,
-        training,
-        kv_dropout,
     )
     x = residual + x
     return x, kv_cache
@@ -358,7 +316,6 @@ class Attention(nn.Module):
         head_size: int,
         orient: str = "outer",
         dropout: float = 0.01,
-        kv_dropout: float = 0.9,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -366,7 +323,6 @@ class Attention(nn.Module):
         self.orient = orient
         self.dropout = dropout
         self.num_heads = num_heads
-        self.kv_dropout = kv_dropout
         self.dropout = MonteCarloDropout(dropout)
         self.q_proj = nn.Linear(
             hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
@@ -415,8 +371,6 @@ class Attention(nn.Module):
                     self.rotary._cos_cached,
                     self.rotary._sin_cached,
                     self.dropout.p,
-                    self.training,
-                    self.kv_dropout,
                 ),
                 None,
             )
@@ -438,8 +392,6 @@ class Attention(nn.Module):
                 self.rotary._cos_cached,
                 self.rotary._sin_cached,
                 self.dropout.p,
-                self.training,
-                self.kv_dropout,
             )
 
 
@@ -451,7 +403,6 @@ class _DecoderLayer(nn.Module):
         head_size: int,
         dropout: float = 0.01,
         orient: str = "outer",
-        kv_dropout: float = 0.9,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -459,7 +410,6 @@ class _DecoderLayer(nn.Module):
         self.head_size = head_size
         self.dropout = dropout
         self.orient = orient
-        self.kv_dropout = kv_dropout
         self.norm = MSNorm(hidden_size)
         self.attention = Attention(hidden_size, num_heads, head_size, orient, dropout)
 
@@ -488,8 +438,6 @@ class _DecoderLayer(nn.Module):
                     self.attention.rotary._sin_cached,
                     self.norm.eps,
                     self.attention.dropout.p,
-                    self.training,
-                    self.kv_dropout,
                 ),
                 None,
             )
@@ -514,8 +462,6 @@ class _DecoderLayer(nn.Module):
                 self.attention.rotary._sin_cached,
                 self.norm.eps,
                 self.attention.dropout.p,
-                self.training,
-                self.kv_dropout,
             )
 
 
@@ -526,11 +472,8 @@ class DecoderOuterLayer(_DecoderLayer):
         num_heads: int,
         head_size: int,
         dropout: float = 0.01,
-        kv_dropout: float = 0.9,
     ):
-        super().__init__(
-            hidden_size, num_heads, head_size, dropout, "outer", kv_dropout
-        )
+        super().__init__(hidden_size, num_heads, head_size, dropout, "outer")
 
 
 class DecoderInterLayer(_DecoderLayer):
@@ -540,11 +483,8 @@ class DecoderInterLayer(_DecoderLayer):
         num_heads: int,
         head_size: int,
         dropout: float = 0.01,
-        kv_dropout: float = 0.5,
     ):
-        super().__init__(
-            hidden_size, num_heads, head_size, dropout, "inter", kv_dropout
-        )
+        super().__init__(hidden_size, num_heads, head_size, dropout, "inter")
 
 
 class DecoderInnerLayer(_DecoderLayer):
@@ -554,11 +494,8 @@ class DecoderInnerLayer(_DecoderLayer):
         num_heads: int,
         head_size: int,
         dropout: float = 0.01,
-        kv_dropout: float = 0,
     ):
-        super().__init__(
-            hidden_size, num_heads, head_size, dropout, "inner", kv_dropout
-        )
+        super().__init__(hidden_size, num_heads, head_size, dropout, "inner")
 
 
 class DecoderLayer(nn.Module):
@@ -568,19 +505,25 @@ class DecoderLayer(nn.Module):
         num_heads: int,
         head_size: int,
         dropout: float = 0.0,
-        outer_kv_dropout: float = 0.9,
-        inter_kv_dropout: float = 0.5,
-        inner_kv_dropout: float = 0.5,
     ):
         super().__init__()
         self.outer = DecoderOuterLayer(
-            hidden_size, num_heads, head_size, dropout, outer_kv_dropout
+            hidden_size,
+            num_heads,
+            head_size,
+            dropout,
         )
         self.inter = DecoderInterLayer(
-            hidden_size, num_heads, head_size, dropout, inter_kv_dropout
+            hidden_size,
+            num_heads,
+            head_size,
+            dropout,
         )
         self.inner = DecoderInnerLayer(
-            hidden_size, num_heads, head_size, dropout, inner_kv_dropout
+            hidden_size,
+            num_heads,
+            head_size,
+            dropout,
         )
 
     def forward(
@@ -603,10 +546,7 @@ class Decoder(nn.Module):
         num_layers: int = 32,
         num_heads: int = 8,
         head_size: int = 128,
-        dropout: float = 0.01,
-        outer_kv_dropout: float = 0.25,
-        inter_kv_dropout: float = 0.5,
-        inner_kv_dropout: float = 0.5,
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -619,9 +559,6 @@ class Decoder(nn.Module):
                     num_heads=num_heads,
                     head_size=head_size,
                     dropout=dropout,
-                    outer_kv_dropout=outer_kv_dropout,
-                    inter_kv_dropout=inter_kv_dropout,
-                    inner_kv_dropout=inner_kv_dropout,
                 )
                 for _ in range(num_layers)
             ]
