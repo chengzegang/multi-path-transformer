@@ -1,7 +1,7 @@
 root: none
 name: webtext-500m
 data_name: webtext
-max_size: 512
+max_size: 1024
 grad_accum: 1
 batch_size: 4
 save_every: 10
@@ -12,7 +12,7 @@ model_config:
   bunch_size: 8
   hidden_size: 512
   num_layers: 20
-  num_heads: 4
+  num_heads: 8
   head_size: 64
 distributed: false
 ema: false
