@@ -237,6 +237,7 @@ def train(
     enable_compiler: bool = False,
     warmup_steps: int = 100,
     ema: bool = True,
+    grad_checkpoints: int = 4,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -278,7 +279,7 @@ def train(
         step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
-    model = add_gradient_checkpoint(model, 32)
+    model = add_gradient_checkpoint(model, grad_checkpoints)
     proxy_model = None
     if distributed:
         model = model.to(device)

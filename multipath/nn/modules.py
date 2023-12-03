@@ -32,44 +32,42 @@ class MSNorm(nn.Module):
         return fused_msnorm(x, self.weight, self.eps)
 
 
+@torch.jit.script
+def fused_swish_glu(x: Tensor, w1: Tensor, w2: Tensor, w3: Tensor) -> Tensor:
+    x1 = F.linear(x, w1)
+    x2 = F.linear(x, w2)
+    hidden = F.silu(x1) * x2
+    return F.linear(hidden, w3)
+
+
 class SwiGLU(nn.Module):
     def __init__(
         self,
         in_features: int,
         hidden_features: int,
         out_features: Optional[int] = None,
-        bias: bool = True,
     ) -> None:
         super().__init__()
         out_features = out_features or in_features
 
-        self.w1 = nn.Linear(
-            in_features, hidden_features, bias=bias, dtype=torch.bfloat16
+        self.w1 = nn.Parameter(
+            torch.randn(hidden_features, in_features, dtype=torch.bfloat16)
+            / math.sqrt(in_features)
         )
-        self.w2 = nn.Linear(
-            in_features, hidden_features, bias=bias, dtype=torch.bfloat16
+        self.w2 = nn.Parameter(
+            torch.randn(hidden_features, in_features, dtype=torch.bfloat16)
+            / math.sqrt(in_features)
         )
-        self.w3 = nn.Linear(
-            hidden_features, in_features, bias=bias, dtype=torch.bfloat16
+        self.w3 = nn.Parameter(
+            torch.randn(out_features, hidden_features, dtype=torch.bfloat16)
+            / math.sqrt(hidden_features)
         )
-
         self.hidden_features = hidden_features
         self.out_features = out_features
         self.in_features = in_features
 
     def forward(self, x: Tensor) -> Tensor:
-        """Computes :attr:`swiglu` with the module's weights
-
-        Args:
-            x (torch.Tensor): A Tensor of shape ``[..., in_features]``
-
-        Returns:
-            torch.Tensor: A Tensor of shape ``[..., out_features]``
-        """
-        x1 = self.w1(x)
-        x2 = self.w2(x)
-        hidden = F.silu(x1) * x2
-        return self.w3(hidden)
+        return fused_swish_glu(x, self.w1, self.w2, self.w3)
 
 
 def rotate_half(x: Tensor) -> Tensor:
@@ -480,15 +478,22 @@ class DecoderInterLayer(_DecoderLayer):
         super().__init__(hidden_size, num_heads, head_size, dropout, "inter")
 
 
-class DecoderInnerLayer(_DecoderLayer):
+class DecoderMLP(nn.Module):
     def __init__(
         self,
         hidden_size: int,
         num_heads: int,
         head_size: int,
-        dropout: float = 0.01,
     ):
-        super().__init__(hidden_size, num_heads, head_size, dropout, "inner")
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.norm = MSNorm(hidden_size)
+        self.mlp = SwiGLU(hidden_size, hidden_size * 8 // 3, hidden_size)
+
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        return self.mlp(self.norm(hidden_states)) + hidden_states
 
 
 class DecoderLayer(nn.Module):
@@ -512,7 +517,7 @@ class DecoderLayer(nn.Module):
             head_size,
             dropout,
         )
-        self.inner = DecoderInnerLayer(
+        self.mlp = DecoderMLP(
             hidden_size,
             num_heads,
             head_size,
@@ -528,8 +533,8 @@ class DecoderLayer(nn.Module):
             key_value_states = [None, None, None]
         residual, kvc1 = self.outer(hidden_states, key_value_states[0])
         residual, kvc2 = self.inter(residual, key_value_states[1])
-        residual, kvc3 = self.inner(residual, key_value_states[2])
-        return residual, (kvc1, kvc2, kvc3)
+        residual = self.mlp(residual)
+        return residual, (kvc1, kvc2)
 
 
 class Decoder(nn.Module):
