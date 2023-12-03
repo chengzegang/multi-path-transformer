@@ -160,7 +160,8 @@ def fused_outer_rotary_attention(
     v = v.unsqueeze(dim=1)
 
     o = F.scaled_dot_product_attention(q, k, v, is_causal=True)
-    o = o.mean(dim=2).flatten(-2)
+
+    o = o.mean(dim=2).transpose(1, -2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o
 
@@ -193,7 +194,7 @@ def fused_inter_rotary_attention(
     k = k.unsqueeze(dim=2)
     v = v.unsqueeze(dim=2)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-    o = o.mean(dim=3).flatten(-2)
+    o = o.mean(dim=3).transpose(2, -2).flatten(-2)
 
     o = F.linear(o, ow, ob)
     return o
@@ -386,7 +387,7 @@ class _DecoderLayer(nn.Module):
     ):
         super().__init__()
         self.norm = MSNorm(hidden_size)
-        self.attention = Attention(hidden_size, num_heads, head_size, "inter", dropout)
+        self.attention = Attention(hidden_size, num_heads, head_size, orient, dropout)
 
     def forward(
         self,
