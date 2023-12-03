@@ -11,8 +11,8 @@ num_workers: 8
 model_config:
   bunch_size: 8
   hidden_size: 1024
-  num_layers: 80
+  num_layers: 64
   num_heads: 8
-  head_size: 64
+  head_size: 128
 distributed: false
 ema: false
