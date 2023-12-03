@@ -278,7 +278,7 @@ def train(
         step = int(ckpt.split("-")[-1].split(".")[0])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
-    model = add_gradient_checkpoint(model, 16)
+    model = add_gradient_checkpoint(model, 32)
     proxy_model = None
     if distributed:
         model = model.to(device)
