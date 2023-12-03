@@ -153,6 +153,8 @@ def fused_rotary_attention(
     rotery_cos: Tensor,
     rotery_sin: Tensor,
     dropout: float = 0.01,
+    training: bool = True,
+    kv_dropout: float = 0.9,
 ) -> Tensor:
     x = F.dropout(x, dropout, True)
     q = F.linear(x, qw, qb)
@@ -163,6 +165,12 @@ def fused_rotary_attention(
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    if training:
+        ind = torch.randperm(k.shape[-2], device=k.device)[
+            : math.ceil((1 - kv_dropout) * k.shape[-2])
+        ]
+        k = k.index_select(-2, ind)
+        v = v.index_select(-2, ind)
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
@@ -193,6 +201,8 @@ def fused_decoder_layer(
     rotery_sin: Tensor,
     eps: float = 1e-6,
     dropout: float = 0.01,
+    training: bool = True,
+    kv_dropout: float = 0.9,
 ) -> Tensor:
     residual = x
     x = fused_msnorm(x, norm_weight, eps)
@@ -212,6 +222,8 @@ def fused_decoder_layer(
         rotery_cos,
         rotery_sin,
         dropout,
+        training,
+        kv_dropout,
     )
     x = residual + x
     return x
@@ -235,6 +247,8 @@ def fused_kvcache_rotary_attention(
     rotery_cos: Tensor,
     rotery_sin: Tensor,
     dropout: float = 0.01,
+    training: bool = True,
+    kv_dropout: float = 0.9,
 ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     x = F.dropout(x, dropout, True)
     q = F.linear(x, qw, qb)
@@ -250,6 +264,12 @@ def fused_kvcache_rotary_attention(
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    if training:
+        ind = torch.randperm(k.shape[-2], device=k.device)[
+            : math.ceil((1 - kv_dropout) * k.shape[-2])
+        ]
+        k = k.index_select(-2, ind)
+        v = v.index_select(-2, ind)
     q = q.unsqueeze(dim=dim + 1)
     k = k.unsqueeze(dim=dim)
     v = v.unsqueeze(dim=dim)
@@ -281,6 +301,8 @@ def fused_kvcache_decoder_layer(
     rotery_sin: Tensor,
     eps: float = 1e-6,
     dropout: float = 0.01,
+    training: bool = True,
+    kv_dropout: float = 0.9,
 ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     residual = x
     x = fused_msnorm(x, norm_weight, eps)
@@ -301,6 +323,8 @@ def fused_kvcache_decoder_layer(
         rotery_cos,
         rotery_sin,
         dropout,
+        training,
+        kv_dropout,
     )
     x = residual + x
     return x, kv_cache
@@ -314,11 +338,15 @@ class Attention(nn.Module):
         head_size: int,
         orient: str = "outer",
         dropout: float = 0.01,
+        kv_dropout: float = 0.9,
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.head_size = head_size
         self.orient = orient
+        self.dropout = dropout
+        self.num_heads = num_heads
+        self.kv_dropout = kv_dropout
         self.dropout = MonteCarloDropout(dropout)
         self.q_proj = nn.Linear(
             hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
@@ -367,6 +395,8 @@ class Attention(nn.Module):
                     self.rotary._cos_cached,
                     self.rotary._sin_cached,
                     self.dropout.p,
+                    self.training,
+                    self.kv_dropout,
                 ),
                 None,
             )
@@ -388,6 +418,8 @@ class Attention(nn.Module):
                 self.rotary._cos_cached,
                 self.rotary._sin_cached,
                 self.dropout.p,
+                self.training,
+                self.kv_dropout,
             )
 
 
@@ -399,6 +431,7 @@ class _DecoderLayer(nn.Module):
         head_size: int,
         dropout: float = 0.01,
         orient: str = "outer",
+        kv_dropout: float = 0.9,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -406,6 +439,7 @@ class _DecoderLayer(nn.Module):
         self.head_size = head_size
         self.dropout = dropout
         self.orient = orient
+        self.kv_dropout = kv_dropout
         self.norm = MSNorm(hidden_size)
         self.attention = Attention(hidden_size, num_heads, head_size, orient, dropout)
 
@@ -434,6 +468,8 @@ class _DecoderLayer(nn.Module):
                     self.attention.rotary._sin_cached,
                     self.norm.eps,
                     self.attention.dropout.p,
+                    self.training,
+                    self.kv_dropout,
                 ),
                 None,
             )
@@ -458,38 +494,72 @@ class _DecoderLayer(nn.Module):
                 self.attention.rotary._sin_cached,
                 self.norm.eps,
                 self.attention.dropout.p,
+                self.training,
+                self.kv_dropout,
             )
 
 
 class DecoderOuterLayer(_DecoderLayer):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.01,
+        kv_dropout: float = 0.9,
     ):
-        super().__init__(hidden_size, num_heads, head_size, dropout, "outer")
+        super().__init__(
+            hidden_size, num_heads, head_size, dropout, "outer", kv_dropout
+        )
 
 
 class DecoderInterLayer(_DecoderLayer):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.01,
+        kv_dropout: float = 0.9,
     ):
-        super().__init__(hidden_size, num_heads, head_size, dropout, "inter")
+        super().__init__(
+            hidden_size, num_heads, head_size, dropout, "inter", kv_dropout
+        )
 
 
 class DecoderInnerLayer(_DecoderLayer):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.01,
+        kv_dropout: float = 0.9,
     ):
-        super().__init__(hidden_size, num_heads, head_size, dropout, "inner")
+        super().__init__(
+            hidden_size, num_heads, head_size, dropout, "inner", kv_dropout
+        )
 
 
 class DecoderLayer(nn.Module):
     def __init__(
-        self, hidden_size: int, num_heads: int, head_size: int, dropout: float = 0.01
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.0,
+        kv_dropout: float = 0.9,
     ):
         super().__init__()
-        self.outer = DecoderOuterLayer(hidden_size, num_heads, head_size, dropout)
-        self.inter = DecoderInterLayer(hidden_size, num_heads, head_size, dropout)
-        self.inner = DecoderInnerLayer(hidden_size, num_heads, head_size, dropout)
+        self.outer = DecoderOuterLayer(
+            hidden_size, num_heads, head_size, dropout, kv_dropout
+        )
+        self.inter = DecoderInterLayer(
+            hidden_size, num_heads, head_size, dropout, kv_dropout
+        )
+        self.inner = DecoderInnerLayer(
+            hidden_size, num_heads, head_size, dropout, kv_dropout
+        )
 
     def forward(
         self,
@@ -512,6 +582,7 @@ class Decoder(nn.Module):
         num_heads: int = 8,
         head_size: int = 128,
         dropout: float = 0.01,
+        kv_dropout: float = 0.9,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -524,6 +595,7 @@ class Decoder(nn.Module):
                     num_heads=num_heads,
                     head_size=head_size,
                     dropout=dropout,
+                    kv_dropout=kv_dropout,
                 )
                 for _ in range(num_layers)
             ]
@@ -539,6 +611,7 @@ class Decoder(nn.Module):
         hidden_states = hidden_states.view(
             hidden_states.shape[0], hidden_states.shape[1], -1, self.hidden_size
         ).contiguous()
+
         if key_value_states is not None:
             for i, layer in enumerate(self.layers):
                 kvs = key_value_states[i]
@@ -547,11 +620,11 @@ class Decoder(nn.Module):
                     kvs,
                 )
                 new_key_value_states.append(new_kvs)
-            return hidden_states, new_key_value_states
         else:
             for layer in self.layers:
                 hidden_states, new_kvs = layer(hidden_states, None)
                 new_key_value_states.append(new_kvs)
-            hidden_states = self.out_norm(hidden_states)
-            hidden_states = hidden_states.flatten(-2)
-            return hidden_states, new_key_value_states
+
+        hidden_states = self.out_norm(hidden_states)
+        hidden_states = hidden_states.flatten(-2)
+        return hidden_states, new_key_value_states
