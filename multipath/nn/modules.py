@@ -154,13 +154,13 @@ def fused_outer_rotary_attention(
     head_size: int,
     x: Tensor,
     qw: Tensor,
-    qb: Tensor,
+    qb: Optional[Tensor],
     kw: Tensor,
-    kb: Tensor,
+    kb: Optional[Tensor],
     vw: Tensor,
-    vb: Tensor,
+    vb: Optional[Tensor],
     ow: Tensor,
-    ob: Tensor,
+    ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
 ) -> Tensor:
@@ -170,12 +170,14 @@ def fused_outer_rotary_attention(
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(1, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(1, -2)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(1, -2)
-    q, k, v = factorize_head(q, k, v)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    q = q.unsqueeze(dim=2)
+    k = k.unsqueeze(dim=1)
+    v = v.unsqueeze(dim=1)
+
     o = F.scaled_dot_product_attention(q, k, v, is_causal=True)
-    o = defactorize_head(o)
-    o = o.transpose(1, -2).flatten(-2)
+    o = o.mean(dim=2).flatten(-2)
     o = F.linear(o, ow, ob)
     return o
 
@@ -186,13 +188,13 @@ def fused_inter_rotary_attention(
     head_size: int,
     x: Tensor,
     qw: Tensor,
-    qb: Tensor,
+    qb: Optional[Tensor],
     kw: Tensor,
-    kb: Tensor,
+    kb: Optional[Tensor],
     vw: Tensor,
-    vb: Tensor,
+    vb: Optional[Tensor],
     ow: Tensor,
-    ob: Tensor,
+    ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
 ) -> Tensor:
@@ -202,12 +204,14 @@ def fused_inter_rotary_attention(
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(2, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(2, -2)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(2, -2)
-    q, k, v = factorize_head(q, k, v)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    q = q.unsqueeze(dim=3)
+    k = k.unsqueeze(dim=2)
+    v = v.unsqueeze(dim=2)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-    o = defactorize_head(o)
-    o = o.transpose(2, -2).flatten(-2)
+    o = o.mean(dim=3).flatten(-2)
+
     o = F.linear(o, ow, ob)
     return o
 
@@ -218,13 +222,13 @@ def fused_inner_rotary_attention(
     head_size: int,
     x: Tensor,
     qw: Tensor,
-    qb: Tensor,
+    qb: Optional[Tensor],
     kw: Tensor,
-    kb: Tensor,
+    kb: Optional[Tensor],
     vw: Tensor,
-    vb: Tensor,
+    vb: Optional[Tensor],
     ow: Tensor,
-    ob: Tensor,
+    ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
 ) -> Tensor:
@@ -235,12 +239,13 @@ def fused_inner_rotary_attention(
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size)
     v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size)
-    q, k, v = factorize_head(q, k, v)
     q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
     k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+    q = q.unsqueeze(dim=4)
+    k = k.unsqueeze(dim=3)
+    v = v.unsqueeze(dim=3)
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
-    o = defactorize_head(o)
-    o = o.flatten(-2)
+    o = o.mean(dim=4).flatten(-2)
     o = F.linear(o, ow, ob)
     return o
 
