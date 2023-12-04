@@ -327,7 +327,6 @@ def train(
     elif data_name == "webtext":
         data = WebData()
     dataset = Sentence(data, max_size=max_size, tokenizer=tokenizer)
-    bert_tokenizer = AutoTokenizer.from_pretrained("cmarkea/distilcamembert-base-ner")
 
     def collate_fn(batch, max_size: int = max_size):
         text = [item["text"] for item in batch]
