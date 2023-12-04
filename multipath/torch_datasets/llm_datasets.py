@@ -96,12 +96,11 @@ class Sentence(IterDataPipe):
 
     def __iter__(self):
         text = ""
+        p = re.compile(r"\n+")
         for data in self.dataset:
             t = data["text"]
             text += " " + t.strip()
             # remove repeat newlines
-
-            p = re.compile(r"\n+")
             text = p.sub("\n", text)
             tokens = self.tokenizer.tokenize(text)
             if len(tokens) <= self.max_size:
