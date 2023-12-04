@@ -87,7 +87,6 @@ class Pile(IterDataPipe):
 class Sentence(IterDataPipe):
     def __init__(self, dataset: IterDataPipe, max_size: int, tokenizer: AutoTokenizer):
         self.tokenizer = tokenizer
-        # self.data = load_dataset("c4", "en", split="train", streaming=True).shuffle()
 
         self.dataset = dataset
         self.max_size = max_size
@@ -96,7 +95,6 @@ class Sentence(IterDataPipe):
         return len(self.dataset)
 
     def __iter__(self):
-        # root = "/mnt/d/datasets/pixiv"
         text = ""
         for data in self.dataset:
             t = data["text"]
