@@ -158,10 +158,10 @@ def step_model(
             if len(accum_loss) % curr_grad_accum == 0 or not isinstance(
                 proxy_model, DDP
             ):
-                out["loss"].backward()
+                (out["loss"] / curr_grad_accum).backward()
             else:
                 with proxy_model.no_sync():
-                    out["loss"].backward()
+                    (out["loss"] / curr_grad_accum).backward()
             accum_loss.append(out["loss"].item())
             output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
