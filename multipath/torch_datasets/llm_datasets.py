@@ -11,7 +11,7 @@ import datasets as ds
 import re
 
 
-class WebData(IterableDataset):
+class _WebData(IterableDataset):
     @staticmethod
     def _raw_content_to_text(data: dict):
         data["text"] = data["raw_content"]
@@ -23,18 +23,14 @@ class WebData(IterableDataset):
     def load_dataset(self):
         # info = get_worker_info()
 
-        cc = (
-            load_dataset(
-                "togethercomputer/RedPajama-Data-V2",
-                snapshots=["2023-14"],
-                languages=["en"],
-                name="default",
-                streaming=True,
-                split="train",
-            )
-            .map(self._raw_content_to_text)
-            .shuffle(buffer_size=10000)
-        )
+        cc = load_dataset(
+            "togethercomputer/RedPajama-Data-V2",
+            snapshots=["2023-14"],
+            languages=["en"],
+            name="default",
+            streaming=True,
+            split="train",
+        ).map(self._raw_content_to_text)
 
         return cc
 
@@ -44,6 +40,18 @@ class WebData(IterableDataset):
     def __iter__(self):
         for d in self.load_dataset():
             yield {"text": d["text"]}
+
+
+class WebData(IterDataPipe):
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.data = (
+            dp.iter.IterableWrapper(_WebData(**kwargs)).shuffle().sharding_filter()
+        )
+
+    def __iter__(self):
+        for d in self.data:
+            yield d
 
 
 class Jsonlines(IterDataPipe):
@@ -57,14 +65,14 @@ class Jsonlines(IterDataPipe):
                 yield line
 
 
-class Pile_(IterDataPipe):
+class _Pile(IterDataPipe):
     def __init__(self, root: str):
         super().__init__()
         self.root = root
         files = glob.glob(os.path.join(self.root, "*.jsonl"))
         self.data = dp.iter.Multiplexer(
             *[
-                dp.iter.IterableWrapper(Jsonlines(f)).shuffle().sharding_filter()
+                dp.iter.IterableWrapper(Jsonlines(f).shuffle().sharding_filter())
                 for f in files
             ]
         ).shuffle()
@@ -77,7 +85,7 @@ class Pile_(IterDataPipe):
 class Pile(IterDataPipe):
     def __init__(self, root: str):
         super().__init__()
-        self.data = Pile_(root)
+        self.data = _Pile(root)
 
     def __iter__(self):
         for d in self.data:
