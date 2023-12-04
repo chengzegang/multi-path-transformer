@@ -338,18 +338,8 @@ def train(
             max_length=max_size,
             add_special_tokens=True,
         )
-        bert_inputs = bert_tokenizer(
-            text,
-            padding=True,
-            return_tensors="pt",
-            truncation=True,
-            max_length=max_size,
-            add_special_tokens=True,
-        )
-
         return {
             "input_ids": inputs["input_ids"],
-            "bert_input_ids": bert_inputs["input_ids"],
         }
 
     dl = DataLoader(
