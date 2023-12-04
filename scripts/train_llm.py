@@ -143,7 +143,7 @@ def step_model(
     )
     # curr_grad_accum = grad_accum
     eval_loss = 0
-    curr_grad_accum = 8
+    curr_grad_accum = schedule_grad_accum(step)
     proxy_model.to(torch.float32)
     for epoch in range(num_epochs):
         accum_loss = []
