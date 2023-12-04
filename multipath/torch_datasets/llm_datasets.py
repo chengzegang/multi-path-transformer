@@ -8,6 +8,7 @@ from torch.utils.data import IterableDataset, IterDataPipe
 from transformers import AutoTokenizer
 import torch.utils.data.datapipes as dp
 import datasets as ds
+import re
 
 
 class WebData(IterableDataset):
@@ -101,6 +102,10 @@ class Sentence(IterDataPipe):
         for data in self.dataset:
             t = data["text"]
             text += " " + t.strip()
+            # remove repeat newlines
+
+            p = re.compile(r"\n+")
+            text = p.sub("\n", text)
             tokens = self.tokenizer.tokenize(text)
             if len(tokens) <= self.max_size:
                 continue
