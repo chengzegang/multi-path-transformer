@@ -26,12 +26,11 @@ class WebData(IterableDataset):
         cc = (
             load_dataset(
                 "togethercomputer/RedPajama-Data-V2",
-                name="default",
-                partition="head_middle",
                 snapshots=["2023-14"],
                 languages=["en"],
-                split="train",
+                name="default",
                 streaming=True,
+                split="train",
             )
             .map(self._raw_content_to_text)
             .shuffle(buffer_size=10000)
