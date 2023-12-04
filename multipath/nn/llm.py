@@ -85,10 +85,10 @@ class LLM(nn.Module):
                 pred = pred_logits[:, :-1].flatten(0, 1)
 
                 pred_id_samples = torch.multinomial(
-                    pred.detach().float().softmax(dim=-1), 32, replacement=True
+                    pred.detach().float().softmax(dim=-1), 8, replacement=True
                 )
                 luckyhits = (pred_id_samples == target.unsqueeze(-1)).sum(dim=-1)
-                weight = 1 - torch.sqrt(luckyhits.float() / 32)
+                weight = 1 - torch.sqrt(luckyhits.float() / 8)
 
                 loss = F.cross_entropy(pred, target, reduction="none")
                 loss = (loss * weight).mean()
