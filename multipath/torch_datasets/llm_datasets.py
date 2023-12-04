@@ -27,46 +27,15 @@ class WebData(IterableDataset):
                 "togethercomputer/RedPajama-Data-V2",
                 name="default",
                 partition="head_middle",
-                snapshots=["2023-06", "2022-49"],
+                snapshots=["2023-06"],
                 languages=["en"],
                 split="train",
                 streaming=True,
             )
             .map(self._raw_content_to_text)
-            .shuffle()
+            .shuffle(buffer_size=10000)
         )
-        # en_wiki = load_dataset(
-        #    "graelo/wikipedia", "20230601.en", split="train", streaming=True
-        # ).shuffle()
-        #
-        # zh_wiki = load_dataset(
-        #    "graelo/wikipedia", "20230601.zh", split="train", streaming=True
-        # ).shuffle()
-        #
-        # zh_cc = load_dataset(
-        #    "uonlp/CulturaX", "zh", split="train", streaming=True
-        # ).shuffle()
-        #
-        # ja_wiki = load_dataset(
-        #    "graelo/wikipedia", "20230601.ja", split="train", streaming=True
-        # ).shuffle()
-        #
-        # ja_cc = load_dataset(
-        #    "uonlp/CulturaX", "ja", split="train", streaming=True
-        # ).shuffle()
-        #
-        # dataset = ds.interleave_datasets(
-        #    [
-        #        cc,
-        #        en_wiki,
-        #        zh_cc,
-        #        zh_wiki,
-        #        ja_cc,
-        #        ja_wiki,
-        #    ],
-        #    [0.5, 0.2, 0.1, 0.1, 0.05, 0.05],
-        #    stopping_strategy="all_exhausted",
-        # )
+
         return cc
 
     def __len__(self):
@@ -131,9 +100,9 @@ class Sentence(IterDataPipe):
         text = ""
         for data in self.dataset:
             t = data["text"]
-            text += t
+            text += " " + t.strip()
             tokens = self.tokenizer.tokenize(text)
             if len(tokens) <= self.max_size:
                 continue
-            yield {"text": self.tokenizer.convert_tokens_to_string(tokens)}
+            yield {"text": text}
             text = ""

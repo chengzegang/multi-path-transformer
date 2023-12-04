@@ -12,13 +12,13 @@ def stream(model_id: str, query: str):
     model_config = {
         "bunch_size": 8,
         "hidden_size": 512,
-        "num_layers": 24,
+        "num_layers": 20,
         "num_heads": 8,
         "head_size": 64,
     }
 
     model = LLM(tokenizer.vocab_size, **model_config).to(
-        dtype=torch.bfloat16, device="cuda"
+        dtype=torch.float32, device="cuda"
     )
     ckpts = glob.glob("models/llm*.pt")
     ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]

@@ -23,6 +23,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     AutoModelForSequenceClassification,
+    AutoModelForTokenClassification,
 )  # type:ignore
 import wandb
 from torch.distributed._tensor import DeviceMesh, Shard, distribute_tensor  # type: ignore
@@ -97,6 +98,12 @@ def grad_accumulation_scheduler(
     return curr_steps
 
 
+def gradient_decay(model: nn.Module, decay: float = 0.99):
+    for p in model.parameters():
+        if p.grad is not None:
+            p.grad *= decay
+
+
 def step_model(
     device: str,
     dl: DataLoader,
@@ -128,21 +135,26 @@ def step_model(
     target_grad_accum = (
         target_num_tokens_per_batch // num_tokens_per_batch // world_size
     )
+
     schedule_grad_accum = partial(
         grad_accumulation_scheduler,
         init_accum_steps=grad_accum,
         last_accum_steps=target_grad_accum,
     )
-    curr_grad_accum = grad_accum
+    # curr_grad_accum = grad_accum
     eval_loss = 0
+    curr_grad_accum = 1
+    proxy_model.to(torch.float32)
     for epoch in range(num_epochs):
         accum_loss = []
 
         for i, batch in enumerate(dl):
             proxy_model.train()
-            batch = batch.to(device)
+            input_ids = batch["input_ids"].to(device)
+            with torch.autocast("cuda", torch.bfloat16):
+                out = proxy_model(input_ids, labels=input_ids)
+            logits = out["logits"]
 
-            out = proxy_model(batch.input_ids, labels=batch.input_ids)
             if len(accum_loss) % curr_grad_accum == 0 or not isinstance(
                 proxy_model, DDP
             ):
@@ -151,8 +163,6 @@ def step_model(
                 with proxy_model.no_sync():
                     out["loss"].backward()
             accum_loss.append(out["loss"].item())
-
-            input_ids = batch["input_ids"]
             output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
                 pbar.set_description(
@@ -167,11 +177,12 @@ def step_model(
                     avg_model.update_parameters(proxy_model)
 
                 sched.step(step)
-                opt.zero_grad()
+                # opt.zero_grad()
+                # gradient_decay(proxy_model, 0.6)
                 step += 1
                 proxy_model.eval()
                 with torch.no_grad():
-                    out = proxy_model(batch.input_ids[[0]], labels=batch.input_ids[[0]])
+                    out = proxy_model(input_ids[[0]], labels=input_ids[[0]])
                     eval_output_ids = out["logits"]
                     eval_loss = out["loss"].item()
                     wandb.log({"eval_loss": eval_loss}, step=step)
@@ -179,7 +190,7 @@ def step_model(
                 accum_loss = []
                 yield epoch, step, avg_loss, input_ids, output_ids, eval_output_ids
 
-                curr_grad_accum = schedule_grad_accum(step)
+                # curr_grad_accum = schedule_grad_accum(step)
         yield epoch, step, accum_loss, input_ids, output_ids, eval_output_ids
 
 
@@ -293,20 +304,20 @@ def train(
             proxy_model.parameters(),
             AdamW,
             lr=lr,
-            weight_decay=1e-2,
+            weight_decay=1e-5,
             betas=(0.9, 0.95),
             fused=True,
             parameters_as_bucket_view=True,
-            eps=1e-5,
+            eps=1e-3,
         )
     else:
         opt = AdamW(
             proxy_model.parameters(),
             lr=lr,
-            weight_decay=1e-2,
+            weight_decay=1e-5,
             fused=True,
             betas=(0.9, 0.95),
-            eps=1e-5,
+            eps=1e-3,
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
@@ -315,7 +326,8 @@ def train(
         data = Pile(root)
     elif data_name == "webtext":
         data = WebData()
-    dataset = Sentence(data, max_size=max_size, tokenizer=tokenizer)
+    dataset = Sentence(data, max_size=max_size, tokenizer=tokenizer).shuffle()
+    bert_tokenizer = AutoTokenizer.from_pretrained("cmarkea/distilcamembert-base-ner")
 
     def collate_fn(batch, max_size: int = max_size):
         text = [item["text"] for item in batch]
@@ -327,8 +339,19 @@ def train(
             max_length=max_size,
             add_special_tokens=True,
         )
+        bert_inputs = bert_tokenizer(
+            text,
+            padding=True,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_size,
+            add_special_tokens=True,
+        )
 
-        return inputs
+        return {
+            "input_ids": inputs["input_ids"],
+            "bert_input_ids": bert_inputs["input_ids"],
+        }
 
     dl = DataLoader(
         dataset,

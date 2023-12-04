@@ -83,7 +83,15 @@ class LLM(nn.Module):
             if labels is not None:
                 target = labels[:, 1:].reshape(-1)
                 pred = pred_logits[:, :-1].flatten(0, 1)
-                loss = F.cross_entropy(pred, target)
+
+                pred_id_samples = torch.multinomial(
+                    pred.detach().float().softmax(dim=-1), 32, replacement=True
+                )
+                luckyhits = (pred_id_samples == target.unsqueeze(-1)).sum(dim=-1)
+                weight = 1 - torch.sqrt(luckyhits.float() / 32)
+
+                loss = F.cross_entropy(pred, target, reduction="none")
+                loss = (loss * weight).mean()
         else:
             input_embeds = self.embed_tokens(input_ids)
             pred_logits, past_key_values = self.decoder(
