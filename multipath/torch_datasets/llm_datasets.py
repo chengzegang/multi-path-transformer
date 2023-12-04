@@ -28,7 +28,7 @@ class WebData(IterableDataset):
                 "togethercomputer/RedPajama-Data-V2",
                 name="default",
                 partition="head_middle",
-                snapshots=["2023-06"],
+                snapshots=["2023-14"],
                 languages=["en"],
                 split="train",
                 streaming=True,
