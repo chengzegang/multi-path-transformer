@@ -143,7 +143,7 @@ def step_model(
     )
     # curr_grad_accum = grad_accum
     eval_loss = 0
-    curr_grad_accum = 1
+    curr_grad_accum = 8
     proxy_model.to(torch.float32)
     for epoch in range(num_epochs):
         accum_loss = []
@@ -177,7 +177,7 @@ def step_model(
                     avg_model.update_parameters(proxy_model)
 
                 sched.step(step)
-                # opt.zero_grad()
+                opt.zero_grad()
                 # gradient_decay(proxy_model, 0.6)
                 step += 1
                 proxy_model.eval()
@@ -190,7 +190,7 @@ def step_model(
                 accum_loss = []
                 yield epoch, step, avg_loss, input_ids, output_ids, eval_output_ids
 
-                # curr_grad_accum = schedule_grad_accum(step)
+                curr_grad_accum = schedule_grad_accum(step)
         yield epoch, step, accum_loss, input_ids, output_ids, eval_output_ids
 
 

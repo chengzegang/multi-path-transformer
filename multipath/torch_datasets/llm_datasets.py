@@ -109,7 +109,7 @@ class Sentence(IterDataPipe):
             t = data["text"]
             text += " " + t.strip()
             # remove repeat newlines
-            text = p.sub("\n", text)
+            text = p.sub("\n", text).strip()
             tokens = self.tokenizer.tokenize(text)
             if len(tokens) <= self.max_size:
                 continue
