@@ -84,14 +84,14 @@ class LLM(nn.Module):
                 target = labels[:, 1:].reshape(-1)
                 pred = pred_logits[:, :-1].flatten(0, 1)
 
-                pred_id_samples = torch.multinomial(
-                    pred.detach().float().softmax(dim=-1), 8, replacement=True
-                )
-                luckyhits = (pred_id_samples == target.unsqueeze(-1)).sum(dim=-1)
-                weight = 1 - torch.sqrt(luckyhits.float() / 8)
+                #pred_id_samples = torch.multinomial(
+                #    pred.detach().float().softmax(dim=-1), 8, replacement=True
+                #)
+                #luckyhits = (pred_id_samples == target.unsqueeze(-1)).sum(dim=-1)
+                #weight = 1 - torch.sqrt(luckyhits.float() / 8)
 
-                loss = F.cross_entropy(pred, target, reduction="none")
-                loss = (loss * weight).mean()
+                loss = F.cross_entropy(pred, target)
+                #loss = (loss * weight).mean()
         else:
             input_embeds = self.embed_tokens(input_ids)
             pred_logits, past_key_values = self.decoder(
