@@ -10,10 +10,10 @@ lr: 3.0e-4
 num_workers: 8
 model_config:
   bunch_size: 8
-  hidden_size: 1024
+  hidden_size: 512
   num_layers: 64
   num_heads: 8
-  head_size: 128
+  head_size: 64
 distributed: false
 grad_checkpoints: 32
 ema: false

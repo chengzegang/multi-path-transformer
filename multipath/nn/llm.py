@@ -11,12 +11,29 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from .modules import Attention, Decoder, MSNorm, SinePositionalEmbedding
+from .modules import Attention, Decoder, MSNorm, RotaryEmbedding, apply_rotary_pos_emb
 import matplotlib
 from transformers import AutoTokenizer
 from enum import Enum
 
 matplotlib.use("Agg")
+
+
+class BunchPositionalEmbedding(nn.Module):
+    def __init__(self, hidden_size: int = 512, bunch_size: int = 8):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.bunch_size = bunch_size
+        self.rotary = RotaryEmbedding(hidden_size)
+
+    def forward(self, input_embeds: Tensor) -> Tensor:
+        input_embeds = input_embeds.unsqueeze(-2).repeat(1, 1, self.bunch_size, 1)
+        input_embeds = apply_rotary_pos_emb(
+            input_embeds.unsqueeze(-3),
+            self.rotary._cos_cached,
+            self.rotary._sin_cached,
+        )
+        return input_embeds.squeeze(-3)
 
 
 class LLM(nn.Module):
@@ -45,7 +62,7 @@ class LLM(nn.Module):
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
-        self.pos_embeds = SinePositionalEmbedding(hidden_size)
+        self.bunch_embeds = BunchPositionalEmbedding(hidden_size, bunch_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
         self.lm_proj = nn.Linear(hidden_size, 8192, dtype=torch.bfloat16, bias=False)
         self.lm_norm = MSNorm(8192, 1e-5)
@@ -53,8 +70,7 @@ class LLM(nn.Module):
 
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
-        input_embeds = input_embeds.unsqueeze(-2).repeat(1, 1, self.bunch_size, 1)
-        input_embeds = self.pos_embeds(input_embeds)
+        input_embeds = self.bunch_embeds(input_embeds)
         pred_logits, _ = self.decoder(input_embeds)
         pred_logits = self.lm_proj(pred_logits)
         pred_logits = self.lm_norm(pred_logits)

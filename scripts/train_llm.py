@@ -113,6 +113,7 @@ def step_model(
     num_epochs: int,
     grad_accum: int,
     step: int,
+    tokens: int,
     pbar: tqdm,
     enable_compiler: bool = False,
     distributed: bool = False,
@@ -168,7 +169,6 @@ def step_model(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, eval_loss: {eval_loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{curr_grad_accum}"
                 )
                 pbar.update(torch.numel(input_ids) * world_size)
-                wandb.log({"tokens": pbar.n}, step=step)
             if len(accum_loss) % curr_grad_accum == 0:
                 nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
@@ -179,6 +179,7 @@ def step_model(
                 opt.zero_grad()
                 # gradient_decay(proxy_model, 0.6)
                 step += 1
+                tokens += torch.numel(input_ids) * world_size
                 proxy_model.eval()
                 with torch.no_grad():
                     out = proxy_model(input_ids[[0]], labels=input_ids[[0]])
@@ -187,10 +188,10 @@ def step_model(
                     wandb.log({"eval_loss": eval_loss}, step=step)
                 avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
-                yield epoch, step, avg_loss, input_ids, output_ids, eval_output_ids
+                yield epoch, step, tokens, avg_loss, input_ids, output_ids, eval_output_ids
 
                 curr_grad_accum = schedule_grad_accum(step)
-        yield epoch, step, accum_loss, input_ids, output_ids, eval_output_ids
+        yield epoch, step, tokens, accum_loss, input_ids, output_ids, eval_output_ids
 
 
 def num_params(model: nn.Module) -> str:
@@ -277,7 +278,7 @@ def train(
     total_params = num_params(model)
     print(f"total params: {total_params}")
     step = 0
-
+    tokens = 0
     try:
         ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
@@ -287,6 +288,7 @@ def train(
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
         step = int(ckpt.split("-")[-1].split(".")[0])
+        tokens = int(ckpt.split("-")[-2])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model, grad_checkpoints)
@@ -377,7 +379,7 @@ def train(
     num_tokens_per_batch = batch_size * max_size
     if local_rank == 0:
         pbar = tqdm(total=total_tokens, dynamic_ncols=True, unit_scale=True)
-        pbar.update(step * 512 * 512 * world_size)
+        pbar.update(tokens)
     iteration = step_model(
         device,
         dl,
@@ -387,6 +389,7 @@ def train(
         num_epochs,
         grad_accum,
         step,
+        tokens,
         pbar,
         enable_compiler,
         distributed,
@@ -394,7 +397,7 @@ def train(
         num_tokens_per_batch,
     )
 
-    for epoch, step, loss, input_ids, output_ids, eval_output_ids in iteration:
+    for epoch, step, tokens, loss, input_ids, output_ids, eval_output_ids in iteration:
         if local_rank == 0:
             in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
             train_out_text = tokenizer.decode(
@@ -412,6 +415,7 @@ def train(
                 {
                     "loss": loss,
                     "lr": sched.get_last_lr()[0],
+                    "tokens": tokens,
                 },
                 step=step,
             )
@@ -424,7 +428,7 @@ def train(
                         )[0]
                     )
                 model.eval()
-                torch.save(model.state_dict(), f"models/llm-{step}.pt")
+                torch.save(model.state_dict(), f"models/llm-{step}-{tokens}.pt")
 
     pbar.close()
 
