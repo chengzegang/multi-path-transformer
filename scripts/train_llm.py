@@ -144,15 +144,14 @@ def step_model(
     # curr_grad_accum = grad_accum
     eval_loss = 0
     curr_grad_accum = schedule_grad_accum(step)
-    #proxy_model.to(torch.float32)
+    # proxy_model.to(torch.float32)
     for epoch in range(num_epochs):
         accum_loss = []
 
         for i, batch in enumerate(dl):
             proxy_model.train()
             input_ids = batch["input_ids"].to(device)
-            with torch.autocast("cuda", torch.bfloat16):
-                out = proxy_model(input_ids, labels=input_ids)
+            out = proxy_model(input_ids, labels=input_ids)
             logits = out["logits"]
 
             if len(accum_loss) % curr_grad_accum == 0 or not isinstance(
