@@ -58,19 +58,23 @@ class LLM(nn.Module):
 
         self.embed_tokens = nn.Embedding(
             vocab_size,
-            hidden_size,
+            hidden_size * bunch_size,
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
-        self.bunch_embeds = BunchPositionalEmbedding(hidden_size, bunch_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
-        self.lm_proj = nn.Linear(hidden_size, 8192, dtype=torch.bfloat16, bias=False)
-        self.lm_norm = MSNorm(8192, 1e-5)
-        self.lm_head = nn.Linear(8192, vocab_size, bias=False)
+        self.lm_proj = nn.Linear(
+            hidden_size, hidden_size * bunch_size, dtype=torch.bfloat16, bias=False
+        )
+        self.lm_norm = MSNorm(hidden_size * bunch_size, 1e-5)
+        self.lm_head = nn.Linear(hidden_size * bunch_size, vocab_size, bias=False)
 
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
-        input_embeds = self.bunch_embeds(input_embeds)
+        input_embeds = input_embeds.reshape(
+            input_embeds.shape[0], input_embeds.shape[1], -1, self.hidden_size
+        )
+        # input_embeds = self.bunch_embeds(input_embeds)
         pred_logits, _ = self.decoder(input_embeds)
         pred_logits = self.lm_proj(pred_logits)
         pred_logits = self.lm_norm(pred_logits)
