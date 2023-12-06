@@ -144,7 +144,7 @@ def step_model(
     )
     # curr_grad_accum = grad_accum
     eval_loss = 0
-    curr_grad_accum = schedule_grad_accum(step)
+    # curr_grad_accum = schedule_grad_accum(step)
     # proxy_model.to(torch.float32)
     for epoch in range(num_epochs):
         accum_loss = []
@@ -155,21 +155,19 @@ def step_model(
             out = proxy_model(input_ids, labels=input_ids)
             logits = out["logits"]
 
-            if len(accum_loss) % curr_grad_accum == 0 or not isinstance(
-                proxy_model, DDP
-            ):
-                (out["loss"] / curr_grad_accum).backward()
+            if len(accum_loss) % grad_accum == 0 or not isinstance(proxy_model, DDP):
+                (out["loss"] / grad_accum).backward()
             else:
                 with proxy_model.no_sync():
-                    (out["loss"] / curr_grad_accum).backward()
+                    (out["loss"] / grad_accum).backward()
             accum_loss.append(out["loss"].item())
             output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
                 pbar.set_description(
-                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, eval_loss: {eval_loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{curr_grad_accum}"
+                    f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, eval_loss: {eval_loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{grad_accum}"
                 )
                 pbar.update(torch.numel(input_ids) * world_size)
-            if len(accum_loss) % curr_grad_accum == 0:
+            if len(accum_loss) % grad_accum == 0:
                 nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
