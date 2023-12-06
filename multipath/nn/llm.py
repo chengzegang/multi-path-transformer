@@ -76,10 +76,7 @@ class LLM(nn.Module):
         )
         # input_embeds = self.bunch_embeds(input_embeds)
         pred_logits, _ = self.decoder(input_embeds)
-        pred_logits = self.lm_proj(pred_logits)
-        pred_logits = self.lm_norm(pred_logits)
-        pred_logits = torch.logsumexp(pred_logits, dim=-2)
-        pred_logits = self.lm_head(pred_logits)
+        pred_logits = self.lm_head(pred_logits.flatten(-2))
         return pred_logits
 
     @property
