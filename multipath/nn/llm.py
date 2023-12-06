@@ -11,7 +11,7 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from .modules import Attention, Decoder, MSNorm
+from .modules import Attention, Decoder, MSNorm, SinePositionalEmbedding
 import matplotlib
 from transformers import AutoTokenizer
 from enum import Enum
@@ -41,18 +41,24 @@ class LLM(nn.Module):
 
         self.embed_tokens = nn.Embedding(
             vocab_size,
-            hidden_size * bunch_size,
+            hidden_size,
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
+        self.pos_embeds = SinePositionalEmbedding(hidden_size)
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
-        self.lm_head = nn.Linear(
-            bunch_size * hidden_size, vocab_size, dtype=torch.bfloat16
-        )
+        self.lm_proj = nn.Linear(hidden_size, 8192, dtype=torch.bfloat16, bias=False)
+        self.lm_norm = MSNorm(8192, 1e-5)
+        self.lm_head = nn.Linear(8192, vocab_size, bias=False)
 
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
+        input_embeds = input_embeds.unsqueeze(-2).repeat(1, 1, self.bunch_size, 1)
+        input_embeds = self.pos_embeds(input_embeds)
         pred_logits, _ = self.decoder(input_embeds)
+        pred_logits = self.lm_proj(pred_logits)
+        pred_logits = self.lm_norm(pred_logits)
+        pred_logits = torch.logsumexp(pred_logits, dim=-2)
         pred_logits = self.lm_head(pred_logits)
         return pred_logits
 

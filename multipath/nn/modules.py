@@ -86,6 +86,33 @@ def apply_rotary_pos_emb(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     return (x * cos) + (rotate_half(x) * sin)
 
 
+class SinePositionalEmbedding(nn.Module):
+    def __init__(self, dim_model: int):
+        super().__init__()
+        self.dim_model = dim_model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        seq_len = x.shape[-2]
+        pos = (
+            torch.arange(0, seq_len, device=x.device, dtype=torch.bfloat16)
+            .unsqueeze(1)
+            .repeat(1, self.dim_model)
+        )
+        dim = (
+            torch.arange(0, self.dim_model, device=x.device, dtype=torch.bfloat16)
+            .unsqueeze(0)
+            .repeat(seq_len, 1)
+        )
+        div = torch.exp(-math.log(10000) * (2 * (dim // 2) / self.dim_model))
+        pos *= div
+        pos[:, 0::2] = torch.sin(pos[:, 0::2])
+        pos[:, 1::2] = torch.cos(pos[:, 1::2])
+
+        output = x.unsqueeze(-1) if x.ndim == 2 else x
+
+        return output + pos.unsqueeze(0).unsqueeze(0)
+
+
 class RotaryEmbedding(torch.nn.Module):
     def __init__(self, dim_model: int):
         super().__init__()
@@ -517,11 +544,11 @@ class DecoderLayer(nn.Module):
             head_size,
             dropout,
         )
-        self.mlp = DecoderMLP(
-            hidden_size,
-            num_heads,
-            head_size,
-        )
+        # self.mlp = DecoderMLP(
+        #    hidden_size,
+        #    num_heads,
+        #    head_size,
+        # )
 
     def forward(
         self,
@@ -532,7 +559,7 @@ class DecoderLayer(nn.Module):
             key_value_states = [None, None, None]
         residual, kvc1 = self.outer(hidden_states, key_value_states[0])
         residual, kvc2 = self.inter(residual, key_value_states[1])
-        residual = self.mlp(residual)
+        # residual = self.mlp(residual)
         return residual, (kvc1, kvc2)
 
 
@@ -568,9 +595,6 @@ class Decoder(nn.Module):
         key_value_states: Optional[List[_KVCT]] = None,
     ) -> Tuple[Tensor, List[_KVCT]]:
         new_key_value_states: List[_KVCT] = []
-        hidden_states = hidden_states.view(
-            hidden_states.shape[0], hidden_states.shape[1], -1, self.hidden_size
-        ).contiguous()
 
         if key_value_states is not None:
             for i, layer in enumerate(self.layers):
@@ -586,5 +610,4 @@ class Decoder(nn.Module):
                 new_key_value_states.append(new_kvs)
 
         hidden_states = self.out_norm(hidden_states)
-        hidden_states = hidden_states.flatten(-2)
         return hidden_states, new_key_value_states
