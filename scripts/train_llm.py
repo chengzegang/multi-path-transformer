@@ -283,6 +283,7 @@ def train(
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
         try:
             model.load_state_dict(torch.load(ckpt, map_location="cpu"), strict=False)
+            model.to(dtype)
         except Exception as e:
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
