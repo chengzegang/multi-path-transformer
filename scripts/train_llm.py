@@ -188,7 +188,7 @@ def step_model(
                 accum_loss = []
                 yield epoch, step, tokens, avg_loss, input_ids, output_ids, eval_output_ids
 
-                curr_grad_accum = schedule_grad_accum(step)
+                #curr_grad_accum = schedule_grad_accum(step)
         yield epoch, step, tokens, accum_loss, input_ids, output_ids, eval_output_ids
 
 
