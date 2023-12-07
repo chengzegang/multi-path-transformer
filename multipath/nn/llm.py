@@ -74,7 +74,7 @@ class LLM(nn.Module):
         input_embeds = input_embeds.reshape(
             input_embeds.shape[0], input_embeds.shape[1], -1, self.hidden_size
         )
-        # input_embeds = self.bunch_embeds(input_embeds)
+
         pred_logits, _ = self.decoder(input_embeds)
         pred_logits = self.lm_head(pred_logits.flatten(-2))
         return pred_logits
