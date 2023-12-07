@@ -286,8 +286,9 @@ def train(
         except Exception as e:
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
-        step = int(ckpt.split("-")[-1].split(".")[0])
-        tokens = int(ckpt.split("-")[-2])
+        tags = ckpt.split('.')[0].split('-')
+        step = int(tags[0])
+        tokens = int(tags[1])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model, grad_checkpoints)
