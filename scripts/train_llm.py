@@ -179,17 +179,11 @@ def step_model(
                 step += 1
                 tokens += torch.numel(input_ids) * world_size
                 proxy_model.eval()
-                with torch.no_grad():
-                    out = proxy_model(input_ids[[0]], labels=input_ids[[0]])
-                    eval_output_ids = out["logits"]
-                    eval_loss = out["loss"].item()
-                    wandb.log({"eval_loss": eval_loss}, step=step)
                 avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
-                yield epoch, step, tokens, avg_loss, input_ids, output_ids, eval_output_ids
-
+                yield epoch, step, tokens, avg_loss, input_ids, output_ids
                 #curr_grad_accum = schedule_grad_accum(step)
-        yield epoch, step, tokens, accum_loss, input_ids, output_ids, eval_output_ids
+        yield epoch, step, tokens, accum_loss, input_ids, output_ids
 
 
 def num_params(model: nn.Module) -> str:
@@ -397,19 +391,15 @@ def train(
         num_tokens_per_batch,
     )
 
-    for epoch, step, tokens, loss, input_ids, output_ids, eval_output_ids in iteration:
+    for epoch, step, tokens, loss, input_ids, output_ids in iteration:
         if local_rank == 0:
             in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
             train_out_text = tokenizer.decode(
                 output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
             )
-            eval_out_text = tokenizer.decode(
-                eval_output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
-            )
             pbar.write("=" * 64)
             pbar.write(f"INPUT       : {repr(in_text[:64])}...")
             pbar.write(f"TRAIN OUTPUT: {repr(train_out_text[:64])}...")
-            pbar.write(f"EVAL OUT    : {repr(eval_out_text[:64])}...")
             pbar.write("=" * 64)
             wandb.log(
                 {

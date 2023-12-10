@@ -3,12 +3,12 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16
-#SBATCH --time=48:00:00
-#SBATCH --mem=128GB 
-#SBATCH --gres=gpu:a100:1
-#SBATCH --job-name=ll
-#SBATCH --output=llm.out
+#SBATCH --cpus-per-task=64
+#SBATCH --time=168:00:00
+#SBATCH --mem=490GB 
+#SBATCH --gres=gpu:a100:4
+#SBATCH --job-name=llm4
+#SBATCH --output=llm4.out
 
 # To use torch.compile
 
@@ -38,7 +38,7 @@ singularity exec --nv \
 		torchrun \\
     		--rdzv-id=$SLURM_JOB_ID \\
     		--nnodes=$SLURM_JOB_NUM_NODES \\
-    		--nproc-per-node=1 \\
+    		--nproc-per-node=4 \\
     		--rdzv-backend=c10d \\
     		--rdzv-endpoint=$MASTER_ADDR \\
     		cli.py configs/500m-pile-1a100-80gb.yml"
