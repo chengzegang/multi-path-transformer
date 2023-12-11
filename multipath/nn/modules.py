@@ -459,11 +459,12 @@ class BIKVAttention(nn.Module):
         )
 
     def forward(self, input_embeds: Tensor, is_causal: bool = True) -> Tensor:
-        indices = F.sigmoid(self.i_proj(input_embeds))
-        indices = indices.transpose(1, 2)
+        q = self.q_proj(input_embeds)
+
         choices = None
         with torch.no_grad():
-            choices = torch.matmul(indices, self.keys.t()).argmax(-1)
+            k = self.k_proj(self.keys).t()
+            choices = torch.matmul(q, k).argmax(-1)
         chosen_keys = self.keys[choices].transpose(1, 2)
         chosen_values = self.values[choices].transpose(1, 2)
         q = self.q_proj(input_embeds)
