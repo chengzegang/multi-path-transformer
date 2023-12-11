@@ -11,16 +11,17 @@ import datasets as ds
 import re
 
 
-class HuggingfaceDataset(IterDataPipe):
-    def __init__(self, **kwargs):
+class LocalText(IterDataPipe):
+    def __init__(self, root: str):
         super().__init__()
-        self.dataset = ds.load_dataset(
-            "wuliangfo/Chinese-Pixiv-Novel", split="train"
-        )
+        self.root = root
+        self.files = glob.iglob(os.path.join(self.root, "**/*.txt"), recursive=True)
 
     def __iter__(self):
-        for d in self.dataset:
-            yield {"text": d["text"]}
+        for file in filter(lambda x: "meta" not in x, self.files):
+            with open(file) as f:
+                for line in f:
+                    yield {"text": line.strip()}
 
 
 class _WebData(IterableDataset):
@@ -56,7 +57,9 @@ class WebData(IterDataPipe):
     def __init__(self, **kwargs):
         super().__init__()
         self.data = (
-            dp.iter.IterableWrapper(HuggingfaceDataset(**kwargs))
+            dp.iter.IterableWrapper(
+                LocalText(root="/mnt/f/datasets/Chinese-Pixiv-Novel/PixivNovel")
+            )
             .shuffle()
             .sharding_filter()
         )
