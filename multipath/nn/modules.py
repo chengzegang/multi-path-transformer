@@ -498,8 +498,8 @@ class BIKVAttention(nn.Module):
 
         q, k = self.rotary(q, k)
 
-        casual_mask = torch.tril(torch.ones_like(index_weights)).bool()
-        index_weights = index_weights.masked_fill(casual_mask[None, ...], -1000)
+        casual_mask = torch.tril(torch.ones_like(index_weights)).bool().logical_not()
+        index_weights = index_weights.masked_fill(casual_mask[None, ...], -torch.inf)
 
         o = F.scaled_dot_product_attention(q, k, v, index_weights)
         o = o.transpose(1, -2)
