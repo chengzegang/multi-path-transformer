@@ -412,7 +412,7 @@ def train(
                         )[0]
                     )
                 model.eval()
-                # torch.save(model.state_dict(), f"models/llm-{step}-{tokens}.pt")
+                torch.save(model.state_dict(), f"models/llm-{step}-{tokens}.pt")
 
     pbar.close()
 
