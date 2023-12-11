@@ -464,6 +464,14 @@ class HKVAttention(nn.Module):
         with torch.no_grad():
             k = self.k_proj(self.keys).t()
             choices = torch.matmul(q.transpose(1, 2), k).argmax(-1)
+        if self.training:
+            choices = torch.randint(
+                0,
+                self.num_kv,
+                size=choices.shape,
+                device=choices.device,
+                dtype=choices.dtype,
+            )
         chosen_keys = self.keys[choices].transpose(1, 2)
         chosen_values = self.values[choices].transpose(1, 2)
         k = self.k_proj(chosen_keys)
