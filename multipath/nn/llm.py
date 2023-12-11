@@ -63,10 +63,6 @@ class LLM(nn.Module):
             dtype=torch.bfloat16,
         )
         self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
-        self.lm_proj = nn.Linear(
-            hidden_size, hidden_size * bunch_size, dtype=torch.bfloat16, bias=False
-        )
-        self.lm_norm = MSNorm(hidden_size * bunch_size, 1e-5)
         self.lm_head = nn.Linear(hidden_size * bunch_size, vocab_size, bias=False)
 
     def _forward(self, input_ids: Tensor) -> Tensor:
