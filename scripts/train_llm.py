@@ -138,7 +138,7 @@ def step_model(
     )
 
     eval_loss = 0
-    # curr_grad_accum = schedule_grad_accum(step)
+    curr_grad_accum = schedule_grad_accum(step)
 
     for epoch in range(num_epochs):
         accum_loss = []
@@ -149,11 +149,13 @@ def step_model(
             out = proxy_model(input_ids, labels=input_ids)
             logits = out["logits"]
 
-            if len(accum_loss) % grad_accum == 0 or not isinstance(proxy_model, DDP):
-                (out["loss"] / grad_accum).backward()
+            if len(accum_loss) % curr_grad_accum == 0 or not isinstance(
+                proxy_model, DDP
+            ):
+                (out["loss"] / curr_grad_accum).backward()
             else:
                 with proxy_model.no_sync():
-                    (out["loss"] / grad_accum).backward()
+                    (out["loss"] / curr_grad_accum).backward()
             accum_loss.append(out["loss"].item())
             output_ids = out["logits"]
             if os.getenv("LOCAL_RANK", "0") == "0":
@@ -161,7 +163,7 @@ def step_model(
                     f"epoch: {epoch:3d}/{num_epochs:3d}, step: {step:8d}, loss: {out['loss'].item():0.6f}, eval_loss: {eval_loss:0.6f}, lr: {sched.get_last_lr()[0]:0.3e}, grad_accum: {len(accum_loss):3d}/{grad_accum}"
                 )
                 pbar.update(torch.numel(input_ids) * world_size)
-            if len(accum_loss) % grad_accum == 0:
+            if len(accum_loss) % curr_grad_accum == 0:
                 nn.utils.clip_grad_value_(proxy_model.parameters(), 1.0)
                 opt.step()
                 if avg_model is not None:
@@ -173,17 +175,11 @@ def step_model(
                 step += 1
                 tokens += torch.numel(input_ids) * world_size
                 proxy_model.eval()
-                with torch.no_grad():
-                    out = proxy_model(input_ids[[0]], labels=input_ids[[0]])
-                    eval_output_ids = out["logits"]
-                    eval_loss = out["loss"].item()
-                    wandb.log({"eval_loss": eval_loss}, step=step)
                 avg_loss = sum(accum_loss) / len(accum_loss)
                 accum_loss = []
-                yield epoch, step, tokens, avg_loss, input_ids, output_ids, eval_output_ids
-
-                # curr_grad_accum = schedule_grad_accum(step)
-        yield epoch, step, tokens, accum_loss, input_ids, output_ids, eval_output_ids
+                yield epoch, step, tokens, avg_loss, input_ids, output_ids
+                curr_grad_accum = schedule_grad_accum(step)
+        yield epoch, step, tokens, accum_loss, input_ids, output_ids
 
 
 def num_params(model: nn.Module) -> str:
@@ -280,8 +276,9 @@ def train(
         except Exception as e:
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
-        step = int(ckpt.split("-")[-1].split(".")[0])
-        tokens = int(ckpt.split("-")[-2])
+        tags = ckpt.split(".")[0].split("-")
+        step = int(tags[0])
+        tokens = int(tags[1])
     except Exception:
         print("fail to load a checkpoint, starting from scratch")
     model = add_gradient_checkpoint(model, grad_checkpoints)
@@ -390,19 +387,15 @@ def train(
         num_tokens_per_batch,
     )
 
-    for epoch, step, tokens, loss, input_ids, output_ids, eval_output_ids in iteration:
+    for epoch, step, tokens, loss, input_ids, output_ids in iteration:
         if local_rank == 0:
             in_text = tokenizer.decode(input_ids[0][:-1], skip_special_tokens=True)
             train_out_text = tokenizer.decode(
                 output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
             )
-            eval_out_text = tokenizer.decode(
-                eval_output_ids[0].argmax(dim=-1)[1:], skip_special_tokens=True
-            )
             pbar.write("=" * 64)
             pbar.write(f"INPUT       : {repr(in_text[:64])}...")
             pbar.write(f"TRAIN OUTPUT: {repr(train_out_text[:64])}...")
-            pbar.write(f"EVAL OUT    : {repr(eval_out_text[:64])}...")
             pbar.write("=" * 64)
             wandb.log(
                 {
