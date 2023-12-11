@@ -11,6 +11,18 @@ import datasets as ds
 import re
 
 
+class HuggingfaceDataset(IterDataPipe):
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.dataset = ds.load_dataset(
+            "wuliangfo/Chinese-Pixiv-Novel", split="train", num_proc=16
+        )
+
+    def __iter__(self):
+        for d in self.dataset:
+            yield {"text": d["text"]}
+
+
 class _WebData(IterableDataset):
     @staticmethod
     def _raw_content_to_text(data: dict):
@@ -21,8 +33,6 @@ class _WebData(IterableDataset):
         super().__init__()
 
     def load_dataset(self):
-        # info = get_worker_info()
-
         cc = load_dataset(
             "togethercomputer/RedPajama-Data-V2",
             snapshots=["2023-14"],
@@ -46,7 +56,9 @@ class WebData(IterDataPipe):
     def __init__(self, **kwargs):
         super().__init__()
         self.data = (
-            dp.iter.IterableWrapper(_WebData(**kwargs)).shuffle().sharding_filter()
+            dp.iter.IterableWrapper(HuggingfaceDataset(**kwargs))
+            .shuffle()
+            .sharding_filter()
         )
 
     def __iter__(self):

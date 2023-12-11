@@ -16,13 +16,13 @@ _KVCT = Tuple[
 
 # @torch.compile(dynamic=False, mode="max-autotune")
 @torch.jit.script
-def fused_msnorm(x: Tensor, weight: Tensor, eps: float = 1e-6) -> Tensor:
+def fused_msnorm(x: Tensor, weight: Tensor, eps: float = 1e-5) -> Tensor:
     x = x * torch.rsqrt((x**2).mean(dim=-1, keepdim=True) + eps) * weight
     return x
 
 
 class MSNorm(nn.Module):
-    def __init__(self, hidden_size: int, eps: float = 1e-6):
+    def __init__(self, hidden_size: int, eps: float = 1e-5):
         super().__init__()
         self.hidden_size = hidden_size
         self.eps = eps
@@ -215,7 +215,7 @@ def fused_decoder_layer(
     ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
-    eps: float = 1e-6,
+    eps: float = 1e-5,
     dropout: float = 0.01,
 ) -> Tensor:
     residual = x
@@ -299,7 +299,7 @@ def fused_kvcache_decoder_layer(
     ob: Optional[Tensor],
     rotery_cos: Tensor,
     rotery_sin: Tensor,
-    eps: float = 1e-6,
+    eps: float = 1e-5,
     dropout: float = 0.01,
 ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     residual = x
@@ -544,11 +544,11 @@ class DecoderLayer(nn.Module):
             head_size,
             dropout,
         )
-        # self.mlp = DecoderMLP(
-        #    hidden_size,
-        #    num_heads,
-        #    head_size,
-        # )
+        self.mlp = DecoderMLP(
+            hidden_size,
+            num_heads,
+            head_size,
+        )
 
     def forward(
         self,
@@ -559,7 +559,7 @@ class DecoderLayer(nn.Module):
             key_value_states = [None, None, None]
         residual, kvc1 = self.outer(hidden_states, key_value_states[0])
         residual, kvc2 = self.inter(residual, key_value_states[1])
-        # residual = self.mlp(residual)
+        residual = self.mlp(residual)
         return residual, (kvc1, kvc2)
 
 
@@ -570,7 +570,7 @@ class Decoder(nn.Module):
         num_layers: int = 32,
         num_heads: int = 8,
         head_size: int = 128,
-        dropout: float = 0.2,
+        dropout: float = 0.02,
     ):
         super().__init__()
         self.hidden_size = hidden_size
