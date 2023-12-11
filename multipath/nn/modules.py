@@ -413,6 +413,102 @@ class Attention(nn.Module):
             )
 
 
+class BIKVAttention(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int = 8,
+        head_size: int = 64,
+        num_kv: int = 65536,
+        index_size: int = 64,
+    ):
+        super().__init__()
+        self.num_kv = num_kv
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.index_size = index_size
+
+        self.i_proj = nn.Linear(
+            hidden_size, index_size, dtype=torch.bfloat16, bias=False
+        )
+        self.q_proj = nn.Linear(
+            hidden_size, hidden_size, dtype=torch.bfloat16, bias=False
+        )
+        self.k_proj = nn.Linear(
+            hidden_size, hidden_size, dtype=torch.bfloat16, bias=False
+        )
+        self.v_proj = nn.Linear(
+            hidden_size, hidden_size, dtype=torch.bfloat16, bias=False
+        )
+
+        self.out_proj = nn.Linear(
+            hidden_size, hidden_size, dtype=torch.bfloat16, bias=False
+        )
+
+        self.rotary = RotaryEmbedding(head_size)
+
+        self.indices = nn.Parameter(
+            torch.randn(
+                num_kv,
+                index_size,
+                dtype=torch.bfloat16,
+            )
+        )
+        self.keys = nn.Parameter(
+            torch.randn(
+                num_kv,
+                hidden_size,
+                dtype=torch.bfloat16,
+            )
+        )
+        self.values = nn.Parameter(
+            torch.randn(
+                num_kv,
+                hidden_size,
+                dtype=torch.bfloat16,
+            )
+        )
+
+    def forward(self, input_embeds: Tensor, is_causal: bool = True) -> Tensor:
+        indices = F.sigmoid(self.i_proj(input_embeds))
+        indices = indices.transpose(1, 2)
+        cached_indices = None
+        choices = None
+        with torch.no_grad():
+            cached_indices = F.sigmoid(self.indices)
+            choices = torch.matmul(indices, self.indices.t()).argmax(-1)
+        chosen_indices = cached_indices[choices]
+        index_weights = torch.matmul(indices, chosen_indices.transpose(-1, -2))
+        chosen_keys = self.keys[choices].transpose(1, 2)
+        chosen_values = self.values[choices].transpose(1, 2)
+        q = self.q_proj(input_embeds)
+        k = self.k_proj(chosen_keys)
+        v = self.v_proj(chosen_values)
+
+        q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, self.head_size).transpose(
+            1, -2
+        )
+        k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, self.head_size).transpose(
+            1, -2
+        )
+        v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, self.head_size).transpose(
+            1, -2
+        )
+
+        q, k = self.rotary(q, k)
+
+        casual_mask = torch.tril(torch.ones_like(index_weights)).bool()
+        index_weights = index_weights.masked_fill(casual_mask[None, ...], -1000)
+
+        o = F.scaled_dot_product_attention(q, k, v, index_weights)
+        o = o.transpose(1, -2)
+        o = o.reshape(o.shape[0], o.shape[1], -1, self.hidden_size)
+        o = self.out_proj(o)
+
+        return o
+
+
 class _DecoderLayer(nn.Module):
     def __init__(
         self,
@@ -483,6 +579,34 @@ class _DecoderLayer(nn.Module):
             )
 
 
+class DecoderBIKVLayer(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.01,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.dropout = dropout
+        self.norm = MSNorm(hidden_size)
+        self.attention = BIKVAttention(hidden_size, num_heads, head_size)
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
+    ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
+        residual = hidden_states
+        hidden_states = self.norm(hidden_states)
+        hidden_states = self.attention(hidden_states)
+        hidden_states = residual + hidden_states
+        return hidden_states, None
+
+
 class DecoderOuterLayer(_DecoderLayer):
     def __init__(
         self,
@@ -521,6 +645,44 @@ class DecoderMLP(nn.Module):
 
     def forward(self, hidden_states: Tensor) -> Tensor:
         return self.mlp(self.norm(hidden_states)) + hidden_states
+
+
+class BIKVDecoderLayer(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.attention = DecoderBIKVLayer(
+            hidden_size,
+            num_heads,
+            head_size,
+            dropout,
+        )
+        self.inter = DecoderInterLayer(
+            hidden_size,
+            num_heads,
+            head_size,
+            dropout,
+        )
+        self.mlp = DecoderMLP(
+            hidden_size,
+            num_heads,
+            head_size,
+        )
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        key_value_states: Optional[_KVCT] = None,
+    ) -> Tuple[Tensor, _KVCT]:
+        residual, _ = self.attention(hidden_states)
+        residual, _ = self.inter(residual)
+        residual = self.mlp(residual)
+        return residual, None
 
 
 class DecoderLayer(nn.Module):
@@ -578,7 +740,7 @@ class Decoder(nn.Module):
         self.head_size = head_size
         self.layers = nn.ModuleList(
             [
-                DecoderLayer(
+                BIKVDecoderLayer(
                     hidden_size=hidden_size,
                     num_heads=num_heads,
                     head_size=head_size,

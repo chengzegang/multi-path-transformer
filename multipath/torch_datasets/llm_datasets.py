@@ -15,10 +15,14 @@ class LocalText(IterDataPipe):
     def __init__(self, root: str):
         super().__init__()
         self.root = root
-        self.files = glob.iglob(os.path.join(self.root, "**/*.txt"), recursive=True)
+        self.files = (
+            dp.iter.FileLister(root, "*.txt", recursive=True)
+            .filter(lambda x: "meta" not in x)
+            .shuffle()
+        )
 
     def __iter__(self):
-        for file in filter(lambda x: "meta" not in x, self.files):
+        for file in self.files:
             with open(file) as f:
                 for line in f:
                     yield {"text": line.strip()}
