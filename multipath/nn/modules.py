@@ -420,18 +420,13 @@ class BIKVAttention(nn.Module):
         num_heads: int = 8,
         head_size: int = 64,
         num_kv: int = 65536,
-        index_size: int = 64,
     ):
         super().__init__()
         self.num_kv = num_kv
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_size = head_size
-        self.index_size = index_size
 
-        self.i_proj = nn.Linear(
-            hidden_size, index_size, dtype=torch.bfloat16, bias=False
-        )
         self.q_proj = nn.Linear(
             hidden_size, hidden_size, dtype=torch.bfloat16, bias=False
         )
@@ -448,13 +443,6 @@ class BIKVAttention(nn.Module):
 
         self.rotary = RotaryEmbedding(head_size)
 
-        self.indices = nn.Parameter(
-            torch.randn(
-                num_kv,
-                index_size,
-                dtype=torch.bfloat16,
-            )
-        )
         self.keys = nn.Parameter(
             torch.randn(
                 num_kv,
@@ -473,13 +461,9 @@ class BIKVAttention(nn.Module):
     def forward(self, input_embeds: Tensor, is_causal: bool = True) -> Tensor:
         indices = F.sigmoid(self.i_proj(input_embeds))
         indices = indices.transpose(1, 2)
-        cached_indices = None
         choices = None
         with torch.no_grad():
-            cached_indices = F.sigmoid(self.indices)
-            choices = torch.matmul(indices, self.indices.t()).argmax(-1)
-        chosen_indices = cached_indices[choices]
-        index_weights = torch.matmul(indices, chosen_indices.transpose(-1, -2))
+            choices = torch.matmul(indices, self.keys.t()).argmax(-1)
         chosen_keys = self.keys[choices].transpose(1, 2)
         chosen_values = self.values[choices].transpose(1, 2)
         q = self.q_proj(input_embeds)
@@ -498,10 +482,7 @@ class BIKVAttention(nn.Module):
 
         q, k = self.rotary(q, k)
 
-        casual_mask = torch.tril(torch.ones_like(index_weights)).bool()
-        index_weights = index_weights.masked_fill(casual_mask[None, ...], -1000)
-
-        o = F.scaled_dot_product_attention(q, k, v, index_weights)
+        o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
         o = o.transpose(1, -2)
         o = o.reshape(o.shape[0], o.shape[1], -1, self.hidden_size)
         o = self.out_proj(o)
