@@ -98,12 +98,6 @@ def grad_accumulation_scheduler(
     return curr_steps
 
 
-def gradient_decay(model: nn.Module, decay: float = 0.99):
-    for p in model.parameters():
-        if p.grad is not None:
-            p.grad *= decay
-
-
 def step_model(
     device: str,
     dl: DataLoader,
@@ -142,10 +136,10 @@ def step_model(
         init_accum_steps=grad_accum,
         last_accum_steps=target_grad_accum,
     )
-    # curr_grad_accum = grad_accum
+
     eval_loss = 0
     # curr_grad_accum = schedule_grad_accum(step)
-    # proxy_model.to(torch.float32)
+
     for epoch in range(num_epochs):
         accum_loss = []
 
@@ -175,7 +169,7 @@ def step_model(
 
                 sched.step(step)
                 opt.zero_grad()
-                # gradient_decay(proxy_model, 0.6)
+
                 step += 1
                 tokens += torch.numel(input_ids) * world_size
                 proxy_model.eval()
@@ -188,7 +182,7 @@ def step_model(
                 accum_loss = []
                 yield epoch, step, tokens, avg_loss, input_ids, output_ids, eval_output_ids
 
-                #curr_grad_accum = schedule_grad_accum(step)
+                # curr_grad_accum = schedule_grad_accum(step)
         yield epoch, step, tokens, accum_loss, input_ids, output_ids, eval_output_ids
 
 
