@@ -413,7 +413,7 @@ class Attention(nn.Module):
             )
 
 
-class BIKVAttention(nn.Module):
+class HKVAttention(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -575,7 +575,7 @@ class DecoderBIKVLayer(nn.Module):
         self.head_size = head_size
         self.dropout = dropout
         self.norm = MSNorm(hidden_size)
-        self.attention = BIKVAttention(hidden_size, num_heads, head_size)
+        self.attention = HKVAttention(hidden_size, num_heads, head_size)
 
     def forward(
         self,
