@@ -15,7 +15,7 @@ class HuggingfaceDataset(IterDataPipe):
     def __init__(self, **kwargs):
         super().__init__()
         self.dataset = ds.load_dataset(
-            "wuliangfo/Chinese-Pixiv-Novel", split="train", num_proc=16
+            "wuliangfo/Chinese-Pixiv-Novel", split="train"
         )
 
     def __iter__(self):

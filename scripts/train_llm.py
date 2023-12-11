@@ -32,8 +32,6 @@ from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     PairwiseParallel,
 )
-
-from multipath.nn.ddp import DistributedModule  # type: ignore
 from multipath.nn.llm import LLM, add_gradient_checkpoint
 from multipath.torch_datasets.llm_datasets import Pile, Sentence, WebData
 import torch.distributed as dist
