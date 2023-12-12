@@ -448,7 +448,7 @@ class HKVAttention(nn.Module):
                 num_kv,
                 hidden_size,
                 dtype=torch.bfloat16,
-            )
+            ) / math.sqrt(hidden_size)
         )
         self.kv_norm = MSNorm(hidden_size)
 
