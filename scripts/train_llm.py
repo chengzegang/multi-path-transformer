@@ -125,7 +125,7 @@ def step_model(
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(proxy_model)
-    target_num_tokens_per_batch = 512 * 512
+    target_num_tokens_per_batch = 1024 * 1024
     world_size = int(os.getenv("WORLD_SIZE", 1))
     target_grad_accum = (
         target_num_tokens_per_batch // num_tokens_per_batch // world_size
