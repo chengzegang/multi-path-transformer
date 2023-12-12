@@ -300,7 +300,7 @@ def train(
             betas=(0.9, 0.95),
             fused=True,
             parameters_as_bucket_view=True,
-            eps=1e-3,
+            eps=1e-5,
         )
     else:
         opt = AdamW(
