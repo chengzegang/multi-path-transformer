@@ -945,6 +945,8 @@ class PDDecoderLayer(nn.Module):
         hidden_states: Tensor,
         key_value_states: Optional[_KVCT] = None,
     ) -> Tuple[Tensor, _KVCT]:
+        if key_value_states is None:
+            key_value_states = [None, None]
         residual, kvc1 = self.outer(hidden_states, key_value_states[0])
         residual, kvc2 = self.inter(residual, key_value_states[1])
         residual = self.mlp(residual)
