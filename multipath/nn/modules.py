@@ -36,10 +36,14 @@ class PDLinear(nn.Module):
         self.out_features = out_features
 
         self.w1 = nn.Parameter(
-            torch.randn((out_features, out_features // groups), dtype=dtype, device=device)
+            torch.randn(
+                (out_features, out_features // groups), dtype=dtype, device=device
+            )
         )
         self.w2 = nn.Parameter(
-            torch.randn((out_features // groups, in_features), dtype=dtype, device=device)
+            torch.randn(
+                (out_features // groups, in_features), dtype=dtype, device=device
+            )
         )
         self.bias = (
             None
@@ -220,9 +224,9 @@ def fused_pd_linear(
     x: Tensor, w1: Tensor, w2: Tensor, b: Optional[Tensor] = None
 ) -> Tensor:
     if b is None:
-        return x @ w2.t() @ w1.t()
+        return F.silu(x @ w2.t()) @ w1.t()
     else:
-        return x @ w2.t() @ w1.t() + b
+        return F.silu(x @ w2.t()) @ w1.t() + b
 
 
 @torch.jit.script
