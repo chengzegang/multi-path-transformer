@@ -443,26 +443,21 @@ class HKVAttention(nn.Module):
 
         self.rotary = RotaryEmbedding(head_size)
 
-        self.keys = nn.Parameter(
+        self.kv = nn.Parameter(
             torch.randn(
                 num_kv,
                 hidden_size,
                 dtype=torch.bfloat16,
             )
         )
-        self.values = nn.Parameter(
-            torch.randn(
-                num_kv,
-                hidden_size,
-                dtype=torch.bfloat16,
-            )
-        )
+        self.kv_norm = MSNorm(hidden_size)
 
     def forward(self, input_embeds: Tensor, is_causal: bool = True) -> Tensor:
         q = self.q_proj(input_embeds)
         choices = None
         with torch.no_grad():
-            k = self.k_proj(self.keys).t()
+            self.kv = self.key_norm(self.kv)
+            k = self.k_proj(self.kv).t()
             choices = torch.matmul(q.transpose(1, 2), k).argmax(-1)
         if self.training:
             choices = torch.randint(
@@ -472,10 +467,10 @@ class HKVAttention(nn.Module):
                 device=choices.device,
                 dtype=choices.dtype,
             )
-        chosen_keys = self.keys[choices].transpose(1, 2)
-        chosen_values = self.values[choices].transpose(1, 2)
-        k = self.k_proj(chosen_keys)
-        v = self.v_proj(chosen_values)
+        chosen_kv = self.kv[choices].transpose(1, 2)
+        chosen_kv = self.kv_norm(chosen_kv)
+        k = self.k_proj(chosen_kv)
+        v = self.v_proj(chosen_kv)
 
         q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, self.head_size).transpose(
             1, -2
