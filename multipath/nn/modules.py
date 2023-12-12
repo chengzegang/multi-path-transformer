@@ -351,6 +351,50 @@ def fused_decoder_layer(
 
 
 @torch.jit.script
+def fused_pd_kvcache_rotary_attention(
+    dim: int,
+    head_size: int,
+    cache_k: Optional[Tensor],
+    cache_v: Optional[Tensor],
+    x: Tensor,
+    qw1: Tensor,
+    qw2: Tensor,
+    qb: Optional[Tensor],
+    kw1: Tensor,
+    kw2: Tensor,
+    kb: Optional[Tensor],
+    vw1: Tensor,
+    vw2: Tensor,
+    vb: Optional[Tensor],
+    ow1: Tensor,
+    ow2: Tensor,
+    ob: Optional[Tensor],
+    rotery_cos: Tensor,
+    rotery_sin: Tensor,
+    dropout: float = 0.01,
+) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+    x = F.dropout(x, dropout, True)
+    q = fused_pd_linear(x, qw1, qw2, qb)
+    k = fused_pd_linear(x, kw1, kw2, kb)
+    v = fused_pd_linear(x, vw1, vw2, vb)
+    if cache_k is not None and cache_v is not None:
+        k = torch.cat([cache_k, k], dim=1)
+        v = torch.cat([cache_v, v], dim=1)
+    cache_k = k
+    cache_v = v
+    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(dim, -2)
+    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(dim, -2)
+    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
+    q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
+    k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+
+    o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+    o = o.transpose(dim, -2).flatten(-2)
+    o = fused_pd_linear(x, ow1, ow2, ob)
+    return o, (cache_k.detach(), cache_v.detach())
+
+
+@torch.jit.script
 def fused_kvcache_rotary_attention(
     dim: int,
     head_size: int,
@@ -587,25 +631,28 @@ class PDAttention(nn.Module):
                 None,
             )
         else:
-            return NotImplemented
-            # return fused_kvcache_rotary_attention(
-            #    tdim,
-            #    self.head_size,
-            #    key_value_states[0],
-            #    key_value_states[1],
-            #    hidden_states,
-            #    self.q_proj.weight,
-            #    self.q_proj.bias,
-            #    self.k_proj.weight,
-            #    self.k_proj.bias,
-            #    self.v_proj.weight,
-            #    self.v_proj.bias,
-            #    self.out_proj.weight,
-            #    self.out_proj.bias,
-            #    self.rotary._cos_cached,
-            #    self.rotary._sin_cached,
-            #    self.dropout.p,
-            # )
+            return fused_pd_kvcache_rotary_attention(
+                tdim,
+                self.head_size,
+                key_value_states[0],
+                key_value_states[1],
+                hidden_states,
+                self.q_proj.w1,
+                self.q_proj.w2,
+                self.q_proj.bias,
+                self.k_proj.w1,
+                self.k_proj.w2,
+                self.k_proj.bias,
+                self.v_proj.w1,
+                self.v_proj.w2,
+                self.v_proj.bias,
+                self.out_proj.w1,
+                self.out_proj.w2,
+                self.out_proj.bias,
+                self.rotary._cos_cached,
+                self.rotary._sin_cached,
+                self.dropout.p,
+            )
 
 
 class HKVAttention(nn.Module):
