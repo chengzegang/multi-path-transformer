@@ -4,7 +4,7 @@ data_name: webtext
 max_size: 1024
 grad_accum: 1
 batch_size: 1
-save_every: 1000
+save_every: 100
 warmup_steps: 10
 lr: 3.0e-4
 num_workers: 16

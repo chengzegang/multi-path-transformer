@@ -44,6 +44,8 @@ from torch.distributed.pipeline.sync import Pipe  # type: ignore
 from torch.distributed import rpc
 import torch._dynamo
 import warnings
+from safetensors.torch import load_model, save_model
+
 
 warnings.simplefilter("ignore")
 torch._dynamo.config.suppress_errors = True
@@ -266,10 +268,11 @@ def train(
     step = 0
     tokens = 0
     try:
-        ckpts = glob.glob("models/llm*.pt")
+        ckpts = glob.glob("models/llm*.safetensors")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
         try:
-            model.load_state_dict(torch.load(ckpt, map_location="cpu"), strict=False)
+            load_model(model, ckpt, strict=False)
+            # model.load_state_dict(torch.load(ckpt, map_location="cpu"), strict=False)
             model.to(dtype)
         except Exception as e:
             print(e)
@@ -412,72 +415,8 @@ def train(
                         )[0]
                     )
                 model.eval()
-                torch.save(model.state_dict(), f"models/llm-{step}-{tokens}.pt")
+                save_model(
+                    model.state_dict(), f"models/llm-{step}-{tokens}.safetensors"
+                )
 
     pbar.close()
-
-
-def save_checkpoint(
-    path: str,
-    model: LLM,
-    optimizer: Optimizer,
-    scheduler: LambdaLR,
-    step: int,
-    **kwargs,
-):
-    os.makedirs(path, exist_ok=True)
-    state = {
-        "model_config": model.config,
-        "optimizer": optimizer.__class__.__name__,
-        "scheduler": scheduler.__class__.__name__,
-        "optimizer_config": optimizer.defaults,
-        "scheduler_config": scheduler.state_dict(),
-        "step": step,
-        "created_at": datetime.now().strftime("%Y%m%d-%H%M%S"),
-        **kwargs,
-    }
-    with open(os.path.join(path, "checkpoint.yaml"), "w") as f:
-        yaml.dump(state, f)
-    torch.save(model.state_dict(), os.path.join(path, "model.pt"))
-    torch.save(optimizer.state_dict(), os.path.join(path, "optimizer.pt"))
-
-
-def check_mappings(d1: dict, d2: dict) -> bool:
-    if len(d1) != len(d2):
-        return False
-
-    if set(d1.keys()) != set(d2.keys()):
-        return False
-
-    for k, v in d1.items():
-        if k not in d2:
-            return False
-        if isinstance(v, dict):
-            return check_mappings(v, d2[k])
-        else:
-            if v != d2[k]:
-                return False
-    return True
-
-
-def load_checkpoint(
-    path: str, model: LLM, optimizer: Optimizer, scheduler: LambdaLR
-) -> Tuple[LLM, Optimizer, LambdaLR, dict]:
-    state = yaml.full_load(open(os.path.join(path, "checkpoint.yaml")))
-
-    model = LLM(**state["model_config"])
-    try:
-        partial_load_state_dict(model, torch.load(os.path.join(path, "model.pt")))
-    except Exception:
-        pass
-    if check_mappings(state["optimizer_config"], optimizer.defaults):
-        try:
-            optimizer.load_state_dict(torch.load(os.path.join(path, "optimizer.pt")))
-        except Exception:
-            pass
-    if check_mappings(state["scheduler_config"], scheduler.state_dict()):
-        try:
-            scheduler.load_state_dict(torch.load(os.path.join(path, "scheduler.pt")))
-        except Exception:
-            pass
-    return model, optimizer, scheduler, state
