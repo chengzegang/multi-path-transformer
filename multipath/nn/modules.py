@@ -419,7 +419,7 @@ class HKVAttention(nn.Module):
         hidden_size: int,
         num_heads: int = 8,
         head_size: int = 64,
-        num_kv: int = 8192,
+        num_kv: int = 65536,
     ):
         super().__init__()
         self.num_kv = num_kv
@@ -455,19 +455,19 @@ class HKVAttention(nn.Module):
         q = self.q_proj(input_embeds)
         # q in shape (B, S, P, H)
         choices = None
-        with torch.no_grad():
-            kv = self.kv[None, None, None, ...]
-            kv = q.unsqueeze(-2) + kv  # (B, S, P, C, H)
-            k = self.k_proj(kv).transpose(-1, -2)
-            choices = torch.matmul(q.unsqueeze(-2), k).argmax(-1).squeeze(-1)
         if self.training:
             choices = torch.randint(
                 0,
                 self.num_kv,
-                size=choices.shape,
-                device=choices.device,
-                dtype=choices.dtype,
+                size=q.shape[:-1],
+                device=q.device,
             )
+        else:
+            with torch.no_grad():
+                kv = self.kv[None, None, None, ...]
+                kv = q.unsqueeze(-2) + kv  # (B, S, P, C, H)
+                k = self.k_proj(kv).transpose(-1, -2)
+                choices = torch.matmul(q.unsqueeze(-2), k).argmax(-1).squeeze(-1)
         chosen_kv = self.kv[choices]
         kv = q + chosen_kv
         k = self.k_proj(kv)
