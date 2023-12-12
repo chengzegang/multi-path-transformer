@@ -60,6 +60,16 @@ class _WebData(IterableDataset):
 class WebData(IterDataPipe):
     def __init__(self, **kwargs):
         super().__init__()
+        self.data = dp.iter.IterableWrapper(_WebData()).shuffle().sharding_filter()
+
+    def __iter__(self):
+        for d in self.data:
+            yield d
+
+
+class WebData2(IterDataPipe):
+    def __init__(self, **kwargs):
+        super().__init__()
         self.data = (
             dp.iter.IterableWrapper(
                 LocalText(root="/mnt/f/datasets/Chinese-Pixiv-Novel/PixivNovel")
