@@ -419,7 +419,7 @@ class HKVAttention(nn.Module):
         hidden_size: int,
         num_heads: int = 8,
         head_size: int = 64,
-        num_kv: int = 65536,
+        num_kv: int = 8192,
     ):
         super().__init__()
         self.num_kv = num_kv
