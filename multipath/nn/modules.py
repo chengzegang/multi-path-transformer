@@ -250,7 +250,7 @@ def fused_pd_rotary_attention(
     rotery_cos: Tensor,
     rotery_sin: Tensor,
     dropout: float = 0.01,
-) -> Tensor:
+) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     x = F.dropout(x, dropout, True)
     q = fused_pd_linear(x, qw1, qw2, qb)
     k = fused_pd_linear(x, kw1, kw2, kb)
@@ -267,7 +267,7 @@ def fused_pd_rotary_attention(
     o = o.transpose(dim, -2).flatten(-2)
 
     o = fused_pd_linear(x, ow1, ow2, ob)
-    return o
+    return o, (k.detach(), v.detach())
 
 
 @torch.jit.script
@@ -287,7 +287,7 @@ def fused_rotary_attention(
     rotery_cos: Tensor,
     rotery_sin: Tensor,
     dropout: float = 0.01,
-) -> Tensor:
+) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     x = F.dropout(x, dropout, True)
     q = F.linear(x, qw, qb)
     k = F.linear(x, kw, kb)
@@ -304,7 +304,7 @@ def fused_rotary_attention(
     o = o.transpose(dim, -2).flatten(-2)
 
     o = F.linear(o, ow, ob)
-    return o
+    return o, (k.detach(), v.detach())
 
 
 @torch.jit.script
@@ -326,10 +326,10 @@ def fused_decoder_layer(
     rotery_sin: Tensor,
     eps: float = 1e-5,
     dropout: float = 0.01,
-) -> Tensor:
+) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     residual = x
     x = fused_msnorm(x, norm_weight, eps)
-    x = fused_rotary_attention(
+    x, kv_cache = fused_rotary_attention(
         dim,
         is_causal,
         head_size,
@@ -347,7 +347,7 @@ def fused_decoder_layer(
         dropout,
     )
     x = residual + x
-    return x
+    return x, kv_cache
 
 
 @torch.jit.script
@@ -524,26 +524,23 @@ class Attention(nn.Module):
             tdim = 2
         else:
             raise ValueError(f"Invalid attention orientation: {self.orient}")
-        if key_value_states is None or key_value_states[0] is None:
-            return (
-                fused_rotary_attention(
-                    tdim,
-                    is_causal,
-                    self.head_size,
-                    hidden_states,
-                    self.q_proj.weight,
-                    self.q_proj.bias,
-                    self.k_proj.weight,
-                    self.k_proj.bias,
-                    self.v_proj.weight,
-                    self.v_proj.bias,
-                    self.out_proj.weight,
-                    self.out_proj.bias,
-                    self.rotary._cos_cached,
-                    self.rotary._sin_cached,
-                    self.dropout.p,
-                ),
-                None,
+        if key_value_states is None:
+            return fused_rotary_attention(
+                tdim,
+                is_causal,
+                self.head_size,
+                hidden_states,
+                self.q_proj.weight,
+                self.q_proj.bias,
+                self.k_proj.weight,
+                self.k_proj.bias,
+                self.v_proj.weight,
+                self.v_proj.bias,
+                self.out_proj.weight,
+                self.out_proj.bias,
+                self.rotary._cos_cached,
+                self.rotary._sin_cached,
+                self.dropout.p,
             )
         else:
             return fused_kvcache_rotary_attention(
@@ -605,30 +602,27 @@ class PDAttention(nn.Module):
             tdim = 2
         else:
             raise ValueError(f"Invalid attention orientation: {self.orient}")
-        if key_value_states is None or key_value_states[0] is None:
-            return (
-                fused_pd_rotary_attention(
-                    tdim,
-                    is_causal,
-                    self.head_size,
-                    hidden_states,
-                    self.q_proj.w1,
-                    self.q_proj.w2,
-                    self.q_proj.bias,
-                    self.k_proj.w1,
-                    self.k_proj.w2,
-                    self.k_proj.bias,
-                    self.v_proj.w1,
-                    self.v_proj.w2,
-                    self.v_proj.bias,
-                    self.out_proj.w1,
-                    self.out_proj.w2,
-                    self.out_proj.bias,
-                    self.rotary._cos_cached,
-                    self.rotary._sin_cached,
-                    self.dropout.p,
-                ),
-                None,
+        if key_value_states is None:
+            return fused_pd_rotary_attention(
+                tdim,
+                is_causal,
+                self.head_size,
+                hidden_states,
+                self.q_proj.w1,
+                self.q_proj.w2,
+                self.q_proj.bias,
+                self.k_proj.w1,
+                self.k_proj.w2,
+                self.k_proj.bias,
+                self.v_proj.w1,
+                self.v_proj.w2,
+                self.v_proj.bias,
+                self.out_proj.w1,
+                self.out_proj.w2,
+                self.out_proj.bias,
+                self.rotary._cos_cached,
+                self.rotary._sin_cached,
+                self.dropout.p,
             )
         else:
             return fused_pd_kvcache_rotary_attention(
@@ -757,27 +751,24 @@ class _DecoderLayer(nn.Module):
         key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
         if key_value_states is None:
-            return (
-                fused_decoder_layer(
-                    self.norm.weight,
-                    1 if self.orient == "outer" else 2,
-                    True if self.orient == "outer" else False,
-                    self.head_size,
-                    hidden_states,
-                    self.attention.q_proj.weight,
-                    self.attention.q_proj.bias,
-                    self.attention.k_proj.weight,
-                    self.attention.k_proj.bias,
-                    self.attention.v_proj.weight,
-                    self.attention.v_proj.bias,
-                    self.attention.out_proj.weight,
-                    self.attention.out_proj.bias,
-                    self.attention.rotary._cos_cached,
-                    self.attention.rotary._sin_cached,
-                    self.norm.eps,
-                    self.attention.dropout.p,
-                ),
-                None,
+            return fused_decoder_layer(
+                self.norm.weight,
+                1 if self.orient == "outer" else 2,
+                True if self.orient == "outer" else False,
+                self.head_size,
+                hidden_states,
+                self.attention.q_proj.weight,
+                self.attention.q_proj.bias,
+                self.attention.k_proj.weight,
+                self.attention.k_proj.bias,
+                self.attention.v_proj.weight,
+                self.attention.v_proj.bias,
+                self.attention.out_proj.weight,
+                self.attention.out_proj.bias,
+                self.attention.rotary._cos_cached,
+                self.attention.rotary._sin_cached,
+                self.norm.eps,
+                self.attention.dropout.p,
             )
         else:
             return fused_kvcache_decoder_layer(
