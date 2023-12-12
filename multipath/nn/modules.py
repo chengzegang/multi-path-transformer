@@ -538,17 +538,11 @@ class PDAttention(nn.Module):
         self.dropout = dropout
         self.num_heads = num_heads
         self.dropout = MonteCarloDropout(dropout)
-        self.q_proj = PDLinear(
-            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
-        )
-        self.k_proj = PDLinear(
-            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
-        )
-        self.v_proj = PDLinear(
-            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
-        )
+        self.q_proj = PDLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.k_proj = PDLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.v_proj = PDLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
         self.out_proj = PDLinear(
-            num_heads * head_size, hidden_size, dtype=torch.bfloat16, bias=False
+            num_heads * head_size, hidden_size, dtype=torch.bfloat16
         )
         self.rotary = RotaryEmbedding(head_size)
 
