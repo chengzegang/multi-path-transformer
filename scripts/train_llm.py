@@ -409,7 +409,7 @@ def train(
                 },
                 step=step,
             )
-            if step % save_every == 1 and math.isfinite(loss):
+            if step % save_every == 0 and math.isfinite(loss):
                 ckpts = glob.glob("models/llm*.pt")
                 if len(ckpts) > 3:
                     os.remove(
