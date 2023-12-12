@@ -274,7 +274,9 @@ def train(
         ckpts = glob.glob("models/llm*.safetensors")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
         try:
-            model.load_state_dict(torch.load(ckpt, map_location="cpu", mmap=True), strict=False)
+            model.load_state_dict(
+                torch.load(ckpt, map_location="cpu", mmap=True), strict=False
+            )
             model.to(dtype)
         except Exception as e:
             print(e)
