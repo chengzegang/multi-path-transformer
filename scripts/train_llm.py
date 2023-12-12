@@ -306,10 +306,10 @@ def train(
         opt = AdamW(
             proxy_model.parameters(),
             lr=lr,
-            weight_decay=1e-5,
+            weight_decay=1e-2,
             fused=True,
             betas=(0.9, 0.95),
-            eps=1e-3,
+            eps=1e-5,
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
