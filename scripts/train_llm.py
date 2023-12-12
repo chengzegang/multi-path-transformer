@@ -296,7 +296,7 @@ def train(
             proxy_model.parameters(),
             AdamW,
             lr=lr,
-            weight_decay=1e-5,
+            weight_decay=1e-2,
             betas=(0.9, 0.95),
             fused=True,
             parameters_as_bucket_view=True,
