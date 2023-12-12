@@ -4,6 +4,7 @@ import torch
 import random
 from multipath.nn.llm import LLM
 import glob
+from safetensors.torch import load_model
 
 
 @torch.inference_mode()
@@ -11,19 +12,19 @@ def stream(model_id: str, query: str):
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model_config = {
         "bunch_size": 8,
-        "hidden_size": 1024,
+        "hidden_size": 2048,
         "num_layers": 64,
-        "num_heads": 8,
-        "head_size": 128,
+        "num_heads": 32,
+        "head_size": 64,
     }
 
     model = LLM(tokenizer.vocab_size, **model_config).to(
         dtype=torch.bfloat16, device="cuda"
     )
-    ckpts = glob.glob("models/llm*.pt")
+    ckpts = glob.glob("models/llm*.safetensors")
     ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
 
-    model.load_state_dict(torch.load(ckpt, mmap=True))
+    load_model(model, ckpt, strict=True)
     device = torch.device("cuda")
     input_ids = tokenizer.encode(query, return_tensors="pt").to(device)
     past_key_values = None
@@ -32,7 +33,7 @@ def stream(model_id: str, query: str):
         pred_logits = outputs["logits"]
         past_key_values = outputs["past_key_values"]
         pred_logits = pred_logits[:, -1:].view(-1)
-        topk = 50
+        topk = 25
         probs, token_ids = pred_logits.topk(topk, dim=-1, largest=True, sorted=True)
         probs = (probs * topk).softmax(dim=-1)[probs > 0.01]
         if probs.numel() > 3:
@@ -50,7 +51,7 @@ def stream(model_id: str, query: str):
 
 for t in stream(
     "meta-llama/Llama-2-7b-chat-hf",
-    "Hello! What is your name?",
+    "祝各位武运昌隆，胜利很快就是我们的了！万岁！” 龟头顶在她的小穴口，足有常人胳膊粗细的肉棒，以及两手互握大小的龟头，相比起那小",
 ):
     print(t + " ", end="", flush=True)
 

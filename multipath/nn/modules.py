@@ -827,9 +827,9 @@ class DecoderPDLayer(nn.Module):
     ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
         residual = hidden_states
         hidden_states = self.norm(hidden_states)
-        hidden_states, _ = self.attention(hidden_states)
+        hidden_states, key_value_states = self.attention(hidden_states)
         hidden_states = residual + hidden_states
-        return hidden_states, None
+        return hidden_states, key_value_states
 
 
 class DecoderBIKVLayer(nn.Module):
@@ -945,10 +945,10 @@ class PDDecoderLayer(nn.Module):
         hidden_states: Tensor,
         key_value_states: Optional[_KVCT] = None,
     ) -> Tuple[Tensor, _KVCT]:
-        residual, _ = self.outer(hidden_states)
-        residual, _ = self.inter(residual)
+        residual, kvc1 = self.outer(hidden_states, key_value_states[0])
+        residual, kvc2 = self.inter(residual, key_value_states[1])
         residual = self.mlp(residual)
-        return residual, None
+        return residual, (kvc1, kvc2)
 
 
 class BIKVDecoderLayer(nn.Module):

@@ -97,7 +97,7 @@ class LLM(nn.Module):
     ):
         pred_logits = None
         loss = None
-        if labels is not None:
+        if past_key_values is not None:
             pred_logits = self._forward(input_ids)
             if labels is not None:
                 target = labels[:, 1:].reshape(-1)
@@ -107,10 +107,14 @@ class LLM(nn.Module):
 
         else:
             input_embeds = self.embed_tokens(input_ids)
+            input_embeds = input_embeds.reshape(
+                input_embeds.shape[0], input_embeds.shape[1], -1, self.hidden_size
+            )
+
             pred_logits, past_key_values = self.decoder(
                 input_embeds, key_value_states=past_key_values
             )
-            pred_logits = self.lm_head(pred_logits)
+            pred_logits = self.lm_head(pred_logits.flatten(-2))
         return {"logits": pred_logits, "loss": loss, "past_key_values": past_key_values}
 
     def generate(self, input_ids: Tensor, max_length: int = 512):
@@ -141,7 +145,7 @@ class LLM(nn.Module):
             pred_logits = pred_logits[:, -1:].view(-1)
             topk = 10
             probs, token_ids = pred_logits.topk(topk, dim=-1, largest=True, sorted=True)
-            probs = (probs * topk).softmax(dim=-1)[probs > 0.01]
+            probs = (probs * topk).softmax(dim=-1)[probs > 0.02]
             if probs.numel() > 3:
                 sample_id = torch.multinomial(probs, 3)
                 sample_id = sample_id[random.randint(0, sample_id.numel() - 1)]
