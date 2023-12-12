@@ -237,7 +237,7 @@ def train(
     warmup_steps: int = 100,
     ema: bool = True,
     grad_checkpoints: int = 4,
-    weight_decay: float = 1e-2,
+    weight_decay: float = 1e-1,
     betas: Tuple[float, float] = (0.9, 0.95),
     eps: float = 1e-5,
 ):
