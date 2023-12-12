@@ -38,7 +38,7 @@ singularity exec --nv \
 		torchrun \\
     		--rdzv-id=$SLURM_JOB_ID \\
     		--nnodes=$SLURM_JOB_NUM_NODES \\
-    		--nproc-per-node=1ZZZz \\
+    		--nproc-per-node=1 \\
     		--rdzv-backend=c10d \\
     		--rdzv-endpoint=$MASTER_ADDR \\
     		cli.py configs/500m-pile-1a100-80gb.yml"
