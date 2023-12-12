@@ -827,7 +827,9 @@ class DecoderPDLayer(nn.Module):
     ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
         residual = hidden_states
         hidden_states = self.norm(hidden_states)
-        hidden_states, key_value_states = self.attention(hidden_states)
+        hidden_states, key_value_states = self.attention(
+            hidden_states, key_value_states
+        )
         hidden_states = residual + hidden_states
         return hidden_states, key_value_states
 
