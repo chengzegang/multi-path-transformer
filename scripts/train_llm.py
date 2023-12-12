@@ -419,7 +419,7 @@ def train(
                     )
                 model.eval()
                 save_model(
-                    model.state_dict(), f"models/llm-{step}-{tokens}.safetensors"
+                    model, f"models/llm-{step}-{tokens}.safetensors"
                 )
 
     pbar.close()
