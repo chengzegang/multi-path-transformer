@@ -21,6 +21,36 @@ def fused_msnorm(x: Tensor, weight: Tensor, eps: float = 1e-5) -> Tensor:
     return x
 
 
+class PDLinear(nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        groups: int = 32,
+        dtype=torch.bfloat16,
+        device=None,
+    ):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+
+        self.w1 = nn.Parameter(
+            torch.randn((out_features, out_features // groups), dtype=dtype, device=device)
+        )
+        self.w2 = nn.Parameter(
+            torch.randn((out_features // groups, in_features), dtype=dtype, device=device)
+        )
+        self.bias = (
+            None
+            if not bias
+            else nn.Parameter(torch.zeros(out_features, dtype=dtype, device=device))
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return fused_pd_linear(x, self.w1, self.w2, self.bias)
+
+
 class MSNorm(nn.Module):
     def __init__(self, hidden_size: int, eps: float = 1e-5):
         super().__init__()
@@ -38,6 +68,30 @@ def fused_swish_glu(x: Tensor, w1: Tensor, w2: Tensor, w3: Tensor) -> Tensor:
     x2 = F.linear(x, w2)
     hidden = F.silu(x1) * x2
     return F.linear(hidden, w3)
+
+
+class PDSwiGLU(nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        hidden_features: int,
+        out_features: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        out_features = out_features or in_features
+
+        self.w1 = PDLinear(in_features, hidden_features, dtype=torch.bfloat16)
+        self.w2 = PDLinear(in_features, hidden_features, dtype=torch.bfloat16)
+        self.w3 = PDLinear(hidden_features, out_features, dtype=torch.bfloat16)
+        self.hidden_features = hidden_features
+        self.out_features = out_features
+        self.in_features = in_features
+
+    def forward(self, x: Tensor) -> Tensor:
+        x1 = self.w1(x)
+        x2 = self.w2(x)
+        hidden = F.silu(x1) * x2
+        return self.w3(hidden)
 
 
 class SwiGLU(nn.Module):
@@ -159,6 +213,57 @@ class MonteCarloDropout(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x = F.dropout(x, self.p, True, self.inplace)
         return x
+
+
+@torch.jit.script
+def fused_pd_linear(
+    x: Tensor, w1: Tensor, w2: Tensor, b: Optional[Tensor] = None
+) -> Tensor:
+    if b is None:
+        return x @ w2.t() @ w1.t()
+    else:
+        return x @ w2.t() @ w1.t() + b
+
+
+@torch.jit.script
+def fused_pd_rotary_attention(
+    dim: int,
+    is_causal: bool,
+    head_size: int,
+    x: Tensor,
+    qw1: Tensor,
+    qw2: Tensor,
+    qb: Optional[Tensor],
+    kw1: Tensor,
+    kw2: Tensor,
+    kb: Optional[Tensor],
+    vw1: Tensor,
+    vw2: Tensor,
+    vb: Optional[Tensor],
+    ow1: Tensor,
+    ow2: Tensor,
+    ob: Optional[Tensor],
+    rotery_cos: Tensor,
+    rotery_sin: Tensor,
+    dropout: float = 0.01,
+) -> Tensor:
+    x = F.dropout(x, dropout, True)
+    q = fused_pd_linear(x, qw1, qw2, qb)
+    k = fused_pd_linear(x, kw1, kw2, kb)
+    v = fused_pd_linear(x, vw1, vw2, vb)
+
+    q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(dim, -2)
+    k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(dim, -2)
+    v = v.view(v.shape[0], v.shape[1], v.shape[2], -1, head_size).transpose(dim, -2)
+    q = apply_rotary_pos_emb(q, rotery_cos, rotery_sin)
+    k = apply_rotary_pos_emb(k, rotery_cos, rotery_sin)
+
+    o = F.scaled_dot_product_attention(q, k, v, is_causal=is_causal)
+
+    o = o.transpose(dim, -2).flatten(-2)
+
+    o = fused_pd_linear(x, ow1, ow2, ob)
+    return o
 
 
 @torch.jit.script
@@ -413,6 +518,98 @@ class Attention(nn.Module):
             )
 
 
+class PDAttention(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        orient: str = "outer",
+        dropout: float = 0.01,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.head_size = head_size
+        self.orient = orient
+        self.dropout = dropout
+        self.num_heads = num_heads
+        self.dropout = MonteCarloDropout(dropout)
+        self.q_proj = PDLinear(
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
+        )
+        self.k_proj = PDLinear(
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
+        )
+        self.v_proj = PDLinear(
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16, bias=False
+        )
+        self.out_proj = PDLinear(
+            num_heads * head_size, hidden_size, dtype=torch.bfloat16, bias=False
+        )
+        self.rotary = RotaryEmbedding(head_size)
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
+    ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
+        tdim = None
+        is_causal = False
+
+        if self.orient == "outer":
+            tdim = 1
+            is_causal = True
+        elif self.orient == "inter":
+            tdim = 2
+        else:
+            raise ValueError(f"Invalid attention orientation: {self.orient}")
+        if key_value_states is None or key_value_states[0] is None:
+            return (
+                fused_pd_rotary_attention(
+                    tdim,
+                    is_causal,
+                    self.head_size,
+                    hidden_states,
+                    self.q_proj.w1,
+                    self.q_proj.w2,
+                    self.q_proj.bias,
+                    self.k_proj.w1,
+                    self.k_proj.w2,
+                    self.k_proj.bias,
+                    self.v_proj.w1,
+                    self.v_proj.w2,
+                    self.v_proj.bias,
+                    self.out_proj.w1,
+                    self.out_proj.w2,
+                    self.out_proj.bias,
+                    self.rotary._cos_cached,
+                    self.rotary._sin_cached,
+                    self.dropout.p,
+                ),
+                None,
+            )
+        else:
+            return NotImplemented
+            # return fused_kvcache_rotary_attention(
+            #    tdim,
+            #    self.head_size,
+            #    key_value_states[0],
+            #    key_value_states[1],
+            #    hidden_states,
+            #    self.q_proj.weight,
+            #    self.q_proj.bias,
+            #    self.k_proj.weight,
+            #    self.k_proj.bias,
+            #    self.v_proj.weight,
+            #    self.v_proj.bias,
+            #    self.out_proj.weight,
+            #    self.out_proj.bias,
+            #    self.rotary._cos_cached,
+            #    self.rotary._sin_cached,
+            #    self.dropout.p,
+            # )
+
+
 class HKVAttention(nn.Module):
     def __init__(
         self,
@@ -561,6 +758,35 @@ class _DecoderLayer(nn.Module):
             )
 
 
+class DecoderPDLayer(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.01,
+        orient: str = "outer",
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.dropout = dropout
+        self.norm = MSNorm(hidden_size)
+        self.attention = PDAttention(hidden_size, num_heads, head_size, orient)
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        key_value_states: Optional[Tuple[Tensor, Tensor]] = None,
+    ) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
+        residual = hidden_states
+        hidden_states = self.norm(hidden_states)
+        hidden_states, _ = self.attention(hidden_states)
+        hidden_states = residual + hidden_states
+        return hidden_states, None
+
+
 class DecoderBIKVLayer(nn.Module):
     def __init__(
         self,
@@ -611,6 +837,24 @@ class DecoderInterLayer(_DecoderLayer):
         super().__init__(hidden_size, num_heads, head_size, dropout, "inter")
 
 
+class PDDecoderMLP(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_size = head_size
+        self.norm = MSNorm(hidden_size)
+        self.mlp = PDSwiGLU(hidden_size, hidden_size * 8 // 3, hidden_size)
+
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        return self.mlp(self.norm(hidden_states)) + hidden_states
+
+
 class DecoderMLP(nn.Module):
     def __init__(
         self,
@@ -627,6 +871,39 @@ class DecoderMLP(nn.Module):
 
     def forward(self, hidden_states: Tensor) -> Tensor:
         return self.mlp(self.norm(hidden_states)) + hidden_states
+
+
+class PDDecoderLayer(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        head_size: int,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.outer = DecoderPDLayer(
+            hidden_size,
+            num_heads,
+            head_size,
+            dropout,
+        )
+        self.inter = DecoderPDLayer(hidden_size, num_heads, head_size, dropout, "inter")
+        self.mlp = PDDecoderMLP(
+            hidden_size,
+            num_heads,
+            head_size,
+        )
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        key_value_states: Optional[_KVCT] = None,
+    ) -> Tuple[Tensor, _KVCT]:
+        residual, _ = self.outer(hidden_states)
+        residual, _ = self.inter(residual)
+        residual = self.mlp(residual)
+        return residual, None
 
 
 class BIKVDecoderLayer(nn.Module):
@@ -722,7 +999,7 @@ class Decoder(nn.Module):
         self.head_size = head_size
         self.layers = nn.ModuleList(
             [
-                BIKVDecoderLayer(
+                PDDecoderLayer(
                     hidden_size=hidden_size,
                     num_heads=num_heads,
                     head_size=head_size,

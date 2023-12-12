@@ -9,11 +9,11 @@ warmup_steps: 10
 lr: 3.0e-4
 num_workers: 16
 model_config:
-  bunch_size: 4
-  hidden_size: 512
-  num_layers: 24
-  num_heads: 8
+  bunch_size: 8
+  hidden_size: 2048
+  num_layers: 64
+  num_heads: 32
   head_size: 64
 distributed: false
-grad_checkpoints: 24
+grad_checkpoints: 64
 ema: false
