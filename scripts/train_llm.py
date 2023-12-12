@@ -237,6 +237,9 @@ def train(
     warmup_steps: int = 100,
     ema: bool = True,
     grad_checkpoints: int = 4,
+    weight_decay: float = 1e-2,
+    betas: Tuple[float, float] = (0.9, 0.95),
+    eps: float = 1e-5,
 ):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -296,20 +299,20 @@ def train(
             proxy_model.parameters(),
             AdamW,
             lr=lr,
-            weight_decay=1e-2,
-            betas=(0.9, 0.95),
+            weight_decay=weight_decay,
+            betas=betas,
             fused=True,
             parameters_as_bucket_view=True,
-            eps=1e-5,
+            eps=eps,
         )
     else:
         opt = AdamW(
             proxy_model.parameters(),
             lr=lr,
-            weight_decay=1e-2,
+            weight_decay=weight_decay,
             fused=True,
-            betas=(0.9, 0.95),
-            eps=1e-5,
+            betas=betas,
+            eps=eps,
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
