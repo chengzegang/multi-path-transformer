@@ -2,7 +2,7 @@ root: /scratch/work/public/ml-datasets/pile/train/
 name: greene-500m
 data_name: pile
 max_size: 2048
-grad_accum: 32
+grad_accum: 1
 batch_size: 1
 save_every: 10
 warmup_steps: 100
@@ -15,5 +15,5 @@ model_config:
   num_heads: 32
   head_size: 64
 distributed: true
-grad_checkpoints: 128
+grad_checkpoints: 64
 ema: false
