@@ -94,7 +94,7 @@ class _Pile(IterDataPipe):
                 dp.iter.IterableWrapper(Jsonlines(f).shuffle().sharding_filter())
                 for f in files
             ]
-        ).shuffle()
+        ).shuffle(100)
 
     def __iter__(self):
         for d in self.data:
