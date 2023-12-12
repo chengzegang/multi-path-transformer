@@ -419,7 +419,7 @@ class HKVAttention(nn.Module):
         hidden_size: int,
         num_heads: int = 8,
         head_size: int = 64,
-        num_kv: int = 65536,
+        num_kv: int = 8192,
     ):
         super().__init__()
         self.num_kv = num_kv
@@ -450,15 +450,16 @@ class HKVAttention(nn.Module):
                 dtype=torch.bfloat16,
             )
         )
-        self.kv_norm = MSNorm(hidden_size)
 
     def forward(self, input_embeds: Tensor, is_causal: bool = True) -> Tensor:
         q = self.q_proj(input_embeds)
+        # q in shape (B, S, P, H)
         choices = None
         with torch.no_grad():
-            self.kv = self.key_norm(self.kv)
-            k = self.k_proj(self.kv).t()
-            choices = torch.matmul(q.transpose(1, 2), k).argmax(-1)
+            kv = self.kv[None, None, None, ...]
+            kv = q.unsqueeze(-2) + kv  # (B, S, P, C, H)
+            k = self.k_proj(kv).transpose(-1, -2)
+            choices = torch.matmul(q.unsqueeze(-2), k).argmax(-1).squeeze(-1)
         if self.training:
             choices = torch.randint(
                 0,
@@ -467,10 +468,10 @@ class HKVAttention(nn.Module):
                 device=choices.device,
                 dtype=choices.dtype,
             )
-        chosen_kv = self.kv[choices].transpose(1, 2)
-        chosen_kv = self.kv_norm(chosen_kv)
-        k = self.k_proj(chosen_kv)
-        v = self.v_proj(chosen_kv)
+        chosen_kv = self.kv[choices]
+        kv = q + chosen_kv
+        k = self.k_proj(kv)
+        v = self.v_proj(kv)
 
         q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, self.head_size).transpose(
             1, -2
