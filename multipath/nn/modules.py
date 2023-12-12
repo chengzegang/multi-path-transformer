@@ -448,7 +448,8 @@ class HKVAttention(nn.Module):
                 num_kv,
                 hidden_size,
                 dtype=torch.bfloat16,
-            ) / math.sqrt(hidden_size)
+            )
+            / math.sqrt(hidden_size)
         )
         self.kv_norm = MSNorm(hidden_size)
 
@@ -456,17 +457,14 @@ class HKVAttention(nn.Module):
         q = self.q_proj(input_embeds)
         # q in shape (B, S, P, H)
         choices = None
-        if self.training:
-            choices = torch.randint(
-                0, self.num_kv, (q.shape[0], q.shape[1], q.shape[2]), device=q.device
-            )
-        else:
-            with torch.no_grad():
-                kv = self.kv_norm(self.kv)
-                kv = kv[None, None, None, ...]
-                kv = q.detach().unsqueeze(-2) + kv  # (B, S, P, C, H)
-                k = self.k_proj(kv).transpose(-1, -2)
-                choices = torch.matmul(q.unsqueeze(-2), k).argmax(-1).squeeze(-1)
+        with torch.no_grad():
+            ind = torch.randperm(self.num_kv, device=q.device)[:1024]
+            kv = self.kv[ind]
+            kv = self.kv_norm(kv)
+            kv = kv[None, None, None, ...]
+            kv = q.detach().unsqueeze(-2) + kv  # (B, S, P, C, H)
+            k = self.k_proj(kv).transpose(-1, -2)
+            choices = torch.matmul(q.unsqueeze(-2), k).argmax(-1).squeeze(-1)
         chosen_kv = self.kv[choices]
         chosen_kv = self.kv_norm(chosen_kv)
         kv = q + chosen_kv
