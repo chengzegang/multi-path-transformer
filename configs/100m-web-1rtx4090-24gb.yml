@@ -15,5 +15,5 @@ model_config:
   num_heads: 16
   head_size: 64
 distributed: false
-grad_checkpoints: 20
+grad_checkpoints: 1
 ema: false
