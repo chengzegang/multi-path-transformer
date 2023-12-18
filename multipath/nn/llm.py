@@ -62,8 +62,10 @@ class LLM(nn.Module):
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
-        self.decoder = Decoder(hidden_size, num_layers, num_heads, head_size)
-        self.lm_head = nn.Linear(hidden_size * bunch_size, vocab_size, bias=False)
+        self.decoder = Decoder(
+            hidden_size * bunch_size, hidden_size, num_layers, num_heads, head_size
+        )
+        self.lm_head = nn.Linear(hidden_size * bunch_size, vocab_size)
 
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
