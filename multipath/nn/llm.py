@@ -11,7 +11,7 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from .modules import Attention, Decoder, MSNorm, RotaryEmbedding, apply_rotary_pos_emb
+from .modules import Decoder, RMSNorm, RotaryEmbedding, apply_rotary_pos_emb
 import matplotlib
 from transformers import AutoTokenizer
 from enum import Enum
@@ -101,14 +101,10 @@ class LLM(nn.Module):
             pred_logits = self._forward(input_ids)
         else:
             input_embeds = self.embed_tokens(input_ids)
-            input_embeds = input_embeds.reshape(
-                input_embeds.shape[0], input_embeds.shape[1], -1, self.hidden_size
-            )
-
             pred_logits, past_key_values = self.decoder(
                 input_embeds, key_value_states=past_key_values
             )
-            pred_logits = self.lm_head(pred_logits.flatten(-2))
+            pred_logits = self.lm_head(pred_logits)
 
         if labels is not None:
             target = labels[:, 1:].reshape(-1)
