@@ -21,7 +21,7 @@ def fused_rmsnorm(x: Tensor, weight: Tensor, eps: float = 1e-5) -> Tensor:
     return x
 
 
-class ExcitedLinear(nn.Module):
+class MultiPathExcitedLinear(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -55,7 +55,7 @@ class ExcitedLinear(nn.Module):
         return fused_excited_linear(x, self.w1, self.w2, self.bias)
 
 
-class RMSNorm(nn.Module):
+class MultiPathExcitedRMSNorm(nn.Module):
     def __init__(self, hidden_size: int, eps: float = 1e-5):
         super().__init__()
         self.hidden_size = hidden_size
@@ -66,7 +66,7 @@ class RMSNorm(nn.Module):
         return fused_rmsnorm(x, self.weight, self.eps)
 
 
-class PDSwiGLU(nn.Module):
+class MultiPathExcitedSwiGLU(nn.Module):
     def __init__(
         self,
         in_features: int,
@@ -76,9 +76,15 @@ class PDSwiGLU(nn.Module):
         super().__init__()
         out_features = out_features or in_features
 
-        self.w1 = ExcitedLinear(in_features, hidden_features, dtype=torch.bfloat16)
-        self.w2 = ExcitedLinear(in_features, hidden_features, dtype=torch.bfloat16)
-        self.w3 = ExcitedLinear(hidden_features, out_features, dtype=torch.bfloat16)
+        self.w1 = MultiPathExcitedLinear(
+            in_features, hidden_features, dtype=torch.bfloat16
+        )
+        self.w2 = MultiPathExcitedLinear(
+            in_features, hidden_features, dtype=torch.bfloat16
+        )
+        self.w3 = MultiPathExcitedLinear(
+            hidden_features, out_features, dtype=torch.bfloat16
+        )
         self.hidden_features = hidden_features
         self.out_features = out_features
         self.in_features = in_features
@@ -106,7 +112,7 @@ def apply_rotary_pos_emb(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     return (x * cos) + (rotate_half(x) * sin)
 
 
-class RotaryEmbedding(torch.nn.Module):
+class MultiPathExcitedRotaryEmbedding(torch.nn.Module):
     def __init__(self, dim_model: int):
         super().__init__()
         self.dim_model = dim_model
@@ -414,7 +420,7 @@ def fused_kvcache_decoder_layer(
     return x, kv_cache
 
 
-class ExcitedAttention(nn.Module):
+class MultiPathExcitedAttention(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -430,19 +436,19 @@ class ExcitedAttention(nn.Module):
         self.dropout = dropout
         self.num_heads = num_heads
         self.dropout = MonteCarloDropout(dropout)
-        self.q_proj = ExcitedLinear(
+        self.q_proj = MultiPathExcitedLinear(
             hidden_size, num_heads * head_size, dtype=torch.bfloat16
         )
-        self.k_proj = ExcitedLinear(
+        self.k_proj = MultiPathExcitedLinear(
             hidden_size, num_heads * head_size, dtype=torch.bfloat16
         )
-        self.v_proj = ExcitedLinear(
+        self.v_proj = MultiPathExcitedLinear(
             hidden_size, num_heads * head_size, dtype=torch.bfloat16
         )
-        self.out_proj = ExcitedLinear(
+        self.out_proj = MultiPathExcitedLinear(
             num_heads * head_size, hidden_size, dtype=torch.bfloat16
         )
-        self.rotary = RotaryEmbedding(head_size)
+        self.rotary = MultiPathExcitedRotaryEmbedding(head_size)
 
     def forward(
         self,
@@ -506,7 +512,7 @@ class ExcitedAttention(nn.Module):
             )
 
 
-class DecoderPDLayer(nn.Module):
+class MultiPathExcitedDecoderAttenion(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -520,8 +526,10 @@ class DecoderPDLayer(nn.Module):
         self.num_heads = num_heads
         self.head_size = head_size
         self.dropout = dropout
-        self.norm = RMSNorm(hidden_size)
-        self.attention = ExcitedAttention(hidden_size, num_heads, head_size, orient)
+        self.norm = MultiPathExcitedRMSNorm(hidden_size)
+        self.attention = MultiPathExcitedAttention(
+            hidden_size, num_heads, head_size, orient
+        )
 
     def forward(
         self,
@@ -538,7 +546,7 @@ class DecoderPDLayer(nn.Module):
         return hidden_states, key_value_states
 
 
-class PDDecoderMLP(nn.Module):
+class MultiPathExcitedDecoderMLP(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -549,14 +557,16 @@ class PDDecoderMLP(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_size = head_size
-        self.norm = RMSNorm(hidden_size)
-        self.mlp = PDSwiGLU(hidden_size, hidden_size * 8 // 3, hidden_size)
+        self.norm = MultiPathExcitedRMSNorm(hidden_size)
+        self.mlp = MultiPathExcitedSwiGLU(
+            hidden_size, hidden_size * 8 // 3, hidden_size
+        )
 
     def forward(self, hidden_states: Tensor) -> Tensor:
         return self.mlp(self.norm(hidden_states)) + hidden_states
 
 
-class PDDecoderLayer(nn.Module):
+class MultiPathExcitedDecoderLayer(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -565,14 +575,16 @@ class PDDecoderLayer(nn.Module):
         dropout: float = 0.0,
     ):
         super().__init__()
-        self.outer = DecoderPDLayer(
+        self.outer = MultiPathExcitedDecoderAttenion(
             hidden_size,
             num_heads,
             head_size,
             dropout,
         )
-        self.inter = DecoderPDLayer(hidden_size, num_heads, head_size, dropout, "inter")
-        self.mlp = PDDecoderMLP(
+        self.inter = MultiPathExcitedDecoderAttenion(
+            hidden_size, num_heads, head_size, dropout, "inter"
+        )
+        self.mlp = MultiPathExcitedDecoderMLP(
             hidden_size,
             num_heads,
             head_size,
@@ -598,8 +610,8 @@ class Decoder(nn.Module):
         total_size: int = 16384,
         path_size: int = 2048,
         num_layers: int = 32,
-        num_heads: int = 8,
-        head_size: int = 128,
+        num_heads: int = 32,
+        head_size: int = 64,
         dropout: float = 0.02,
     ):
         super().__init__()
@@ -607,10 +619,11 @@ class Decoder(nn.Module):
         self.path_size = path_size
         self.num_layers = num_layers
         self.head_size = head_size
+        self.in_norm = nn.LayerNorm(total_size)
         self.in_proj = nn.Linear(total_size, total_size)
         self.layers = nn.ModuleList(
             [
-                PDDecoderLayer(
+                MultiPathExcitedDecoderLayer(
                     hidden_size=path_size,
                     num_heads=num_heads,
                     head_size=head_size,
@@ -619,7 +632,7 @@ class Decoder(nn.Module):
                 for _ in range(num_layers)
             ]
         )
-        self.out_norm = RMSNorm(path_size)
+        self.out_norm = MultiPathExcitedRMSNorm(path_size)
         self.out_proj = nn.Linear(total_size, total_size)
 
     def forward(
@@ -629,9 +642,11 @@ class Decoder(nn.Module):
         is_causal: bool = True,
     ) -> Tuple[Tensor, List[_KVCT]]:
         new_key_value_states: List[_KVCT] = []
+        hidden_states = self.in_norm(hidden_states)
+        hidden_states = F.silu(hidden_states, True)
         hidden_states = self.in_proj(hidden_states)
         hidden_states = hidden_states.reshape(
-            hidden_states.shape[0], hidden_states.shape[1], -1, self.hidden_size
+            hidden_states.shape[0], hidden_states.shape[1], -1, self.path_size
         )
         if key_value_states is not None:
             for i, layer in enumerate(self.layers):
@@ -648,6 +663,7 @@ class Decoder(nn.Module):
                 new_key_value_states.append(new_kvs)
 
         hidden_states = self.out_norm(hidden_states)
+        hidden_states = F.silu(hidden_states, True)
         hidden_states = hidden_states.flatten(-2)
         hidden_states = self.out_proj(hidden_states)
         return hidden_states, new_key_value_states

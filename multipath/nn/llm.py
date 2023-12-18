@@ -11,7 +11,12 @@ from torch.backends import cuda, cudnn
 from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
-from .modules import Decoder, RMSNorm, RotaryEmbedding, apply_rotary_pos_emb
+from .modules import (
+    Decoder,
+    MultiPathExcitedRMSNorm,
+    MultiPathExcitedRotaryEmbedding,
+    apply_rotary_pos_emb,
+)
 import matplotlib
 from transformers import AutoTokenizer
 from enum import Enum
@@ -24,7 +29,7 @@ class BunchPositionalEmbedding(nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.bunch_size = bunch_size
-        self.rotary = RotaryEmbedding(hidden_size)
+        self.rotary = MultiPathExcitedRotaryEmbedding(hidden_size)
 
     def forward(self, input_embeds: Tensor) -> Tensor:
         input_embeds = input_embeds.unsqueeze(-2).repeat(1, 1, self.bunch_size, 1)
@@ -69,10 +74,6 @@ class LLM(nn.Module):
 
     def _forward(self, input_ids: Tensor) -> Tensor:
         input_embeds = self.embed_tokens(input_ids)
-        input_embeds = input_embeds.reshape(
-            input_embeds.shape[0], input_embeds.shape[1], -1, self.hidden_size
-        )
-
         pred_logits, _ = self.decoder(input_embeds)
         pred_logits = self.lm_head(pred_logits)
         return pred_logits
