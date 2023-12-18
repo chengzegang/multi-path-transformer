@@ -52,7 +52,7 @@ class ExcitedLinear(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        return fused_pd_linear(x, self.w1, self.w2, self.bias)
+        return fused_excited_linear(x, self.w1, self.w2, self.bias)
 
 
 class MSNorm(nn.Module):
@@ -220,7 +220,7 @@ class MonteCarloDropout(nn.Module):
 
 
 @torch.jit.script
-def fused_pd_linear(
+def fused_excited_linear(
     x: Tensor, w1: Tensor, w2: Tensor, b: Optional[Tensor] = None
 ) -> Tensor:
     if b is None:
@@ -252,9 +252,9 @@ def fused_pd_rotary_attention(
     dropout: float = 0.01,
 ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     x = F.dropout(x, dropout, True)
-    q = fused_pd_linear(x, qw1, qw2, qb)
-    k = fused_pd_linear(x, kw1, kw2, kb)
-    v = fused_pd_linear(x, vw1, vw2, vb)
+    q = fused_excited_linear(x, qw1, qw2, qb)
+    k = fused_excited_linear(x, kw1, kw2, kb)
+    v = fused_excited_linear(x, vw1, vw2, vb)
 
     q = q.view(q.shape[0], q.shape[1], q.shape[2], -1, head_size).transpose(dim, -2)
     k = k.view(k.shape[0], k.shape[1], k.shape[2], -1, head_size).transpose(dim, -2)
@@ -266,7 +266,7 @@ def fused_pd_rotary_attention(
 
     o = o.transpose(dim, -2).flatten(-2)
 
-    o = fused_pd_linear(x, ow1, ow2, ob)
+    o = fused_excited_linear(x, ow1, ow2, ob)
     return o, (k.detach(), v.detach())
 
 
@@ -374,9 +374,9 @@ def fused_pd_kvcache_rotary_attention(
     dropout: float = 0.01,
 ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
     x = F.dropout(x, dropout, True)
-    q = fused_pd_linear(x, qw1, qw2, qb)
-    k = fused_pd_linear(x, kw1, kw2, kb)
-    v = fused_pd_linear(x, vw1, vw2, vb)
+    q = fused_excited_linear(x, qw1, qw2, qb)
+    k = fused_excited_linear(x, kw1, kw2, kb)
+    v = fused_excited_linear(x, vw1, vw2, vb)
     if cache_k is not None and cache_v is not None:
         k = torch.cat([cache_k, k], dim=1)
         v = torch.cat([cache_v, v], dim=1)
@@ -390,7 +390,7 @@ def fused_pd_kvcache_rotary_attention(
 
     o = F.scaled_dot_product_attention(q, k, v, is_causal=False)
     o = o.transpose(dim, -2).flatten(-2)
-    o = fused_pd_linear(x, ow1, ow2, ob)
+    o = fused_excited_linear(x, ow1, ow2, ob)
     return o, (cache_k.detach(), cache_v.detach())
 
 
