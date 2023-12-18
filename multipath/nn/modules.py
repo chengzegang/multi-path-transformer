@@ -21,13 +21,13 @@ def fused_msnorm(x: Tensor, weight: Tensor, eps: float = 1e-5) -> Tensor:
     return x
 
 
-class PDLinear(nn.Module):
+class ExcitedLinear(nn.Module):
     def __init__(
         self,
         in_features: int,
         out_features: int,
         bias: bool = True,
-        groups: int = 32,
+        groups: int = 8,
         dtype=torch.bfloat16,
         device=None,
     ):
@@ -84,9 +84,9 @@ class PDSwiGLU(nn.Module):
         super().__init__()
         out_features = out_features or in_features
 
-        self.w1 = PDLinear(in_features, hidden_features, dtype=torch.bfloat16)
-        self.w2 = PDLinear(in_features, hidden_features, dtype=torch.bfloat16)
-        self.w3 = PDLinear(hidden_features, out_features, dtype=torch.bfloat16)
+        self.w1 = ExcitedLinear(in_features, hidden_features, dtype=torch.bfloat16)
+        self.w2 = ExcitedLinear(in_features, hidden_features, dtype=torch.bfloat16)
+        self.w3 = ExcitedLinear(hidden_features, out_features, dtype=torch.bfloat16)
         self.hidden_features = hidden_features
         self.out_features = out_features
         self.in_features = in_features
@@ -579,10 +579,10 @@ class PDAttention(nn.Module):
         self.dropout = dropout
         self.num_heads = num_heads
         self.dropout = MonteCarloDropout(dropout)
-        self.q_proj = PDLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.k_proj = PDLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.v_proj = PDLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.out_proj = PDLinear(
+        self.q_proj = ExcitedLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.k_proj = ExcitedLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.v_proj = ExcitedLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.out_proj = ExcitedLinear(
             num_heads * head_size, hidden_size, dtype=torch.bfloat16
         )
         self.rotary = RotaryEmbedding(head_size)
