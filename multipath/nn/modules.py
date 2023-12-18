@@ -604,7 +604,7 @@ class MultiPathExcitedDecoderLayer(nn.Module):
         return residual, (kvc1, kvc2)
 
 
-class Decoder(nn.Module):
+class MultiPathExcitedTransformerDecoder(nn.Module):
     def __init__(
         self,
         total_size: int = 16384,

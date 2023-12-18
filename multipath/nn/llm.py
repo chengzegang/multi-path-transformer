@@ -12,7 +12,7 @@ from torch.utils.checkpoint import checkpoint
 from tqdm.auto import tqdm  # type: ignore
 import matplotlib.pyplot as plt
 from .modules import (
-    Decoder,
+    MultiPathExcitedTransformerDecoder,
     MultiPathExcitedRMSNorm,
     MultiPathExcitedRotaryEmbedding,
     apply_rotary_pos_emb,
@@ -67,7 +67,7 @@ class LLM(nn.Module):
             padding_idx=padding_idx,
             dtype=torch.bfloat16,
         )
-        self.decoder = Decoder(
+        self.decoder = MultiPathExcitedTransformerDecoder(
             hidden_size * bunch_size, hidden_size, num_layers, num_heads, head_size
         )
         self.lm_head = nn.Linear(hidden_size * bunch_size, vocab_size)
