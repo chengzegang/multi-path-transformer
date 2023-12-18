@@ -619,7 +619,7 @@ class MultiPathExcitedTransformerDecoder(nn.Module):
         self.path_size = path_size
         self.num_layers = num_layers
         self.head_size = head_size
-        self.in_norm = nn.LayerNorm(total_size)
+        self.in_norm = MultiPathExcitedRMSNorm(total_size)
         self.in_proj = nn.Linear(total_size, total_size)
         self.layers = nn.ModuleList(
             [
