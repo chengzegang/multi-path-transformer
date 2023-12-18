@@ -563,7 +563,7 @@ class Attention(nn.Module):
             )
 
 
-class PDAttention(nn.Module):
+class ExcitedAttention(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -579,9 +579,15 @@ class PDAttention(nn.Module):
         self.dropout = dropout
         self.num_heads = num_heads
         self.dropout = MonteCarloDropout(dropout)
-        self.q_proj = ExcitedLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.k_proj = ExcitedLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
-        self.v_proj = ExcitedLinear(hidden_size, num_heads * head_size, dtype=torch.bfloat16)
+        self.q_proj = ExcitedLinear(
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16
+        )
+        self.k_proj = ExcitedLinear(
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16
+        )
+        self.v_proj = ExcitedLinear(
+            hidden_size, num_heads * head_size, dtype=torch.bfloat16
+        )
         self.out_proj = ExcitedLinear(
             num_heads * head_size, hidden_size, dtype=torch.bfloat16
         )
@@ -809,7 +815,7 @@ class DecoderPDLayer(nn.Module):
         self.head_size = head_size
         self.dropout = dropout
         self.norm = MSNorm(hidden_size)
-        self.attention = PDAttention(hidden_size, num_heads, head_size, orient)
+        self.attention = ExcitedAttention(hidden_size, num_heads, head_size, orient)
 
     def forward(
         self,
