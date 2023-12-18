@@ -512,7 +512,7 @@ class MultiPathExcitedAttention(nn.Module):
             )
 
 
-class MultiPathExcitedDecoderAttenion(nn.Module):
+class MultiPathExcitedDecoderAttention(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -575,13 +575,13 @@ class MultiPathExcitedDecoderLayer(nn.Module):
         dropout: float = 0.0,
     ):
         super().__init__()
-        self.outer = MultiPathExcitedDecoderAttenion(
+        self.outer = MultiPathExcitedDecoderAttention(
             hidden_size,
             num_heads,
             head_size,
             dropout,
         )
-        self.inter = MultiPathExcitedDecoderAttenion(
+        self.inter = MultiPathExcitedDecoderAttention(
             hidden_size, num_heads, head_size, dropout, "inter"
         )
         self.mlp = MultiPathExcitedDecoderMLP(

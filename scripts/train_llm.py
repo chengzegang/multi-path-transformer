@@ -314,7 +314,7 @@ def train(
             # fused=True,
             betas=betas,
             eps=eps,
-            optim_bits=8,
+            optim_bits=16,
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
