@@ -72,7 +72,7 @@ class LLM(nn.Module):
         )
 
         pred_logits, _ = self.decoder(input_embeds)
-        pred_logits = self.lm_head(pred_logits.flatten(-2))
+        pred_logits = self.lm_head(pred_logits)
         return pred_logits
 
     @property
