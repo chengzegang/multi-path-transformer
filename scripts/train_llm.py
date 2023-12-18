@@ -280,7 +280,7 @@ def train(
         except Exception as e:
             print(e)
             partial_load_state_dict(model, torch.load(ckpt, mmap=True))
-        tags = ckpt.split(".")[0].split("-")
+        tags = os.path.basename(ckpt).split(".")[0].split("-")
         step = int(tags[0])
         tokens = int(tags[1])
     except Exception:
