@@ -44,7 +44,7 @@ from torch.distributed.pipeline.sync import Pipe  # type: ignore
 from torch.distributed import rpc
 import torch._dynamo
 import warnings
-from safetensors.torch import load_model, save_model
+
 
 
 warnings.simplefilter("ignore")
@@ -125,7 +125,7 @@ def step_model(
         )
     if os.getenv("LOCAL_RANK", "0") == "0":
         wandb.watch(proxy_model)
-    target_num_tokens_per_batch = 1024 * 1024
+    target_num_tokens_per_batch = 512 * 512
     world_size = int(os.getenv("WORLD_SIZE", 1))
     target_grad_accum = (
         target_num_tokens_per_batch // num_tokens_per_batch // world_size
@@ -271,7 +271,7 @@ def train(
     step = 0
     tokens = 0
     try:
-        ckpts = glob.glob("models/llm*.safetensors")
+        ckpts = glob.glob("models/llm*.pt")
         ckpt = sorted(ckpts, key=lambda x: int(x.split("-")[-1].split(".")[0]))[-1]
         try:
             model.load_state_dict(
