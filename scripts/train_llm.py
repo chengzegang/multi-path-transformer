@@ -7,7 +7,7 @@ import os
 from functools import partial
 from typing import Optional, Tuple
 import torch.utils.data.datapipes as dp
-
+import bitsandbytes as bnb
 from torch.distributed.tensor.parallel.ddp import pre_dp_module_transform
 import tempfile
 import torch
@@ -307,13 +307,14 @@ def train(
             eps=eps,
         )
     else:
-        opt = AdamW(
+        opt = bnb.optim.AdamW8bit(
             proxy_model.parameters(),
             lr=lr,
             weight_decay=weight_decay,
-            fused=True,
+            # fused=True,
             betas=betas,
             eps=eps,
+            optim_bits=8,
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
