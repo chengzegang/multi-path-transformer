@@ -307,14 +307,14 @@ def train(
             eps=eps,
         )
     else:
-        opt = torch.optim.RMSprop(
+        opt = bnb.optim.AdamW8bit(
             proxy_model.parameters(),
-            lr=lr,
+            lr=1e-5,
             weight_decay=weight_decay,
             # fused=True,
-            # betas=betas,
+            betas=betas,
             eps=eps,
-            # optim_bits=16,
+            optim_bits=8,
         )
 
     sched = LambdaLR(opt, partial(expoential_lr, warmup_steps, 0.999, 0.1))
