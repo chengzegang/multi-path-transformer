@@ -595,20 +595,23 @@ class PDDecoderLayer(nn.Module):
 class Decoder(nn.Module):
     def __init__(
         self,
-        hidden_size: int = 512,
+        total_size: int = 16384,
+        path_size: int = 2048,
         num_layers: int = 32,
         num_heads: int = 8,
         head_size: int = 128,
         dropout: float = 0.02,
     ):
         super().__init__()
-        self.hidden_size = hidden_size
+        self.total_size = total_size
+        self.path_size = path_size
         self.num_layers = num_layers
         self.head_size = head_size
+        self.in_proj = nn.Linear(total_size, total_size)
         self.layers = nn.ModuleList(
             [
                 PDDecoderLayer(
-                    hidden_size=hidden_size,
+                    hidden_size=path_size,
                     num_heads=num_heads,
                     head_size=head_size,
                     dropout=dropout,
@@ -616,7 +619,8 @@ class Decoder(nn.Module):
                 for _ in range(num_layers)
             ]
         )
-        self.out_norm = RMSNorm(hidden_size)
+        self.out_norm = RMSNorm(path_size)
+        self.out_proj = nn.Linear(total_size, total_size)
 
     def forward(
         self,
@@ -625,6 +629,7 @@ class Decoder(nn.Module):
         is_causal: bool = True,
     ) -> Tuple[Tensor, List[_KVCT]]:
         new_key_value_states: List[_KVCT] = []
+        hidden_states = self.in_proj(hidden_states)
         hidden_states = hidden_states.reshape(
             hidden_states.shape[0], hidden_states.shape[1], -1, self.hidden_size
         )
@@ -644,4 +649,5 @@ class Decoder(nn.Module):
 
         hidden_states = self.out_norm(hidden_states)
         hidden_states = hidden_states.flatten(-2)
+        hidden_states = self.out_proj(hidden_states)
         return hidden_states, new_key_value_states
